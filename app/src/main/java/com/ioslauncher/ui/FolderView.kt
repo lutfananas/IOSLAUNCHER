@@ -84,14 +84,16 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
     }
 
     private fun d() = host.dimens
+    private val page get() = (parent as? HomePageView)?.pageIndex ?: 1
 
     /** Glass background rect in local coordinates: spans the icon areas of the covered cells. */
     private fun computeBg(): RectF {
         val d = d()
         val left = (d.cellWidth - d.iconSize) / 2f
-        val top = d.iconTopInCell
+        val top = d.iconTopIn(page)
+        val ch = d.cellH(page)
         val w = spanX * d.cellWidth - (d.cellWidth - d.iconSize)
-        val h = spanY * d.cellHeight - (d.cellHeight - d.iconSize).toFloat()
+        val h = spanY * ch - (ch - d.iconSize).toFloat()
         bg.set(left, top, left + w, top + h)
         return bg
     }
@@ -269,9 +271,9 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
                     when (resizeEdge) {
                         1 -> sx = resizeStartX + (dx / d.cellWidth).roundToInt()
                         -1 -> sx = resizeStartX - (dx / d.cellWidth).roundToInt()
-                        2 -> sy = resizeStartY + (dy / d.cellHeight).roundToInt()
+                        2 -> sy = resizeStartY + (dy / d.cellH(page)).roundToInt()
                     }
-                    sx = sx.coerceIn(1, d.cols); sy = sy.coerceIn(1, d.rows)
+                    sx = sx.coerceIn(1, d.cols); sy = sy.coerceIn(1, d.gridRows(page))
                     if (sx != spanX || sy != spanY) {
                         performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
                         host.onFolderResize(f.id, sx, sy, false)

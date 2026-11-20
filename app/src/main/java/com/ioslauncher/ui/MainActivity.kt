@@ -355,6 +355,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             dock.alpha = dockTargetAlpha()
             dock.visibility = if (dimens.dockEnabled && dockTargetAlpha() > 0.01f) View.VISIBLE else if (dimens.dockEnabled) View.INVISIBLE else View.GONE
             bottomBar.forEach { it.alpha = 1f - libProgress }
+            // Page 1 grid uses the dock's space: the dots slide down into it.
+            if (dimens.page0ExtraRows > 0) indicator.translationY = firstPageHide * (dimens.dockHeight)
         }
         // Don't let the invisible search button catch taps on the App Library.
         searchButton?.visibility = if (libProgress > 0.98f) View.INVISIBLE else View.VISIBLE
@@ -579,7 +581,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override fun onFolderResize(folderId: String, spanX: Int, spanY: Int, done: Boolean) {
         val f = layoutStore.folders[folderId] ?: return
         f.spanX = spanX.coerceIn(1, dimens.cols)
-        f.spanY = spanY.coerceIn(1, dimens.rows)
+        f.spanY = spanY.coerceIn(1, dimens.gridRows(layoutStore.pageOf(folderId).coerceAtLeast(0)))
         layoutStore.normalize(removeEmpty = done)
         if (done) layoutStore.save()
         applyLayout(true)

@@ -171,7 +171,7 @@ class DragController(private val a: MainActivity) {
         val d = a.dimens
         val layout = a.layoutStore
         val (sx, sy) = layout.spanOf(key, page)
-        val cell = pv.cellAt(cx - (sx - 1) * d.cellWidth / 2f, cy - (sy - 1) * d.cellHeight / 2f)
+        val cell = pv.cellAt(cx - (sx - 1) * d.cellWidth / 2f, cy - (sy - 1) * d.cellH(page) / 2f)
         val col = cell.x.coerceIn(0, d.cols - sx)
         val row = cell.y.coerceIn(0, layout.rowsFor(page) - sy)
         val curPage = layout.pageOf(key)

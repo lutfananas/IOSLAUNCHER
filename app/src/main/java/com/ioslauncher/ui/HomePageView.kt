@@ -98,7 +98,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
 
     private fun cellOrigin(col: Int, row: Int): Point {
         val d = host.dimens
-        return Point(d.sidePadding + col * d.cellWidth, d.gridTop + (row + rowOffset) * d.cellHeight)
+        return Point(d.sidePadding + col * d.cellWidth, d.gridTop + (row + rowOffset) * d.cellH(pageIndex))
     }
 
     /** Item whose icon centre is near (x, y) — used to form folders by hovering. */
@@ -109,11 +109,12 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
             val o = cellOrigin(p.left, p.top)
             val v = views[k]
             if (v is FolderView) {
-                val r = RectF(o.x + (d.cellWidth - d.iconSize) / 2f, o.y + d.iconTopInCell,
-                    o.x + p.width() * d.cellWidth - (d.cellWidth - d.iconSize) / 2f, o.y + p.height() * d.cellHeight - (d.cellHeight - d.iconSize - d.iconTopInCell))
+                val ch = d.cellH(pageIndex); val it0 = d.iconTopIn(pageIndex)
+                val r = RectF(o.x + (d.cellWidth - d.iconSize) / 2f, o.y + it0,
+                    o.x + p.width() * d.cellWidth - (d.cellWidth - d.iconSize) / 2f, o.y + p.height() * ch - (ch - d.iconSize - it0))
                 if (r.contains(x, y)) return k
             } else {
-                val cx = o.x + d.cellWidth / 2f; val cy = o.y + d.iconTopInCell + d.iconSize / 2f
+                val cx = o.x + d.cellWidth / 2f; val cy = o.y + d.iconTopIn(pageIndex) + d.iconSize / 2f
                 if (kotlin.math.hypot(x - cx, y - cy) < radius) return k
             }
         }
@@ -124,7 +125,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
     fun cellAt(x: Float, y: Float): Point {
         val d = host.dimens
         val col = kotlin.math.floor((x - d.sidePadding) / d.cellWidth).toInt().coerceIn(0, d.cols - 1)
-        val row = kotlin.math.floor((y - d.gridTop) / d.cellHeight).toInt().coerceIn(rowOffset, d.rows - 1) - rowOffset
+        val row = kotlin.math.floor((y - d.gridTop) / d.cellH(pageIndex)).toInt().coerceIn(rowOffset, d.gridRows(pageIndex) - 1) - rowOffset
         return Point(col, row)
     }
 
@@ -132,7 +133,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
     fun indexAt(x: Float, y: Float, itemCount: Int, excludeKey: String?): Int {
         val d = host.dimens
         val col = ((x - d.sidePadding) / d.cellWidth).toInt().coerceIn(0, d.cols - 1)
-        val row = ((y - d.gridTop) / d.cellHeight).toInt().coerceIn(rowOffset, d.rows - 1) - rowOffset
+        val row = ((y - d.gridTop) / d.cellH(pageIndex)).toInt().coerceIn(rowOffset, d.gridRows(pageIndex) - 1) - rowOffset
         val others = keys.filter { it != excludeKey }
         val pl = layout.placements(pageIndex, others)
         others.forEachIndexed { i, _ -> val p = pl[i] ?: return@forEachIndexed; if (p.contains(col, row) || (col >= p.left && col < p.right && row >= p.top && row < p.bottom)) return i }
@@ -147,15 +148,15 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
         keys.forEachIndexed { i, k ->
             val p = placements.getOrNull(i) ?: Rect(0, 0, 1, 1)
             views[k]?.measure(MeasureSpec.makeMeasureSpec(d.cellWidth * p.width(), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(d.cellHeight * p.height(), MeasureSpec.EXACTLY))
+                MeasureSpec.makeMeasureSpec(d.cellH(pageIndex) * p.height(), MeasureSpec.EXACTLY))
         }
-        statusView?.measure(MeasureSpec.makeMeasureSpec(d.cellWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(d.cellHeight, MeasureSpec.EXACTLY))
+        statusView?.measure(MeasureSpec.makeMeasureSpec(d.cellWidth, MeasureSpec.EXACTLY), MeasureSpec.makeMeasureSpec(d.cellH(pageIndex), MeasureSpec.EXACTLY))
         setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), MeasureSpec.getSize(heightMeasureSpec))
     }
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val d = host.dimens
-        val top = d.iconTopInCell
+        val top = d.iconTopIn(pageIndex)
         statusView?.let { sv ->
             val o = Point(d.sidePadding + (d.cols - 1) * d.cellWidth, d.gridTop)
             sv.glyphSize = d.iconSize
@@ -164,7 +165,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
             sv.showLabel = d.showLabels
             // Raised by a quarter icon above the first-row cell.
             val lift = d.iconSize / 4
-            sv.layout(o.x, o.y - lift, o.x + d.cellWidth, o.y + d.cellHeight - lift)
+            sv.layout(o.x, o.y - lift, o.x + d.cellWidth, o.y + d.cellH(pageIndex) - lift)
         }
         keys.forEachIndexed { index, key ->
             val v = views[key] ?: return@forEachIndexed
@@ -177,7 +178,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
                 v.pivotY = top + d.iconSize / 2f
             }
             val o = cellOrigin(p.left, p.top)
-            v.layout(o.x, o.y, o.x + d.cellWidth * p.width(), o.y + d.cellHeight * p.height())
+            v.layout(o.x, o.y, o.x + d.cellWidth * p.width(), o.y + d.cellH(pageIndex) * p.height())
             if (animateNext) {
                 val prev = previous[key]
                 if (prev != null && (prev.x != o.x || prev.y != o.y)) {

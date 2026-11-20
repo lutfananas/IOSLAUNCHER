@@ -36,7 +36,8 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
 
     val cols get() = prefs.gridCols
     val rows get() = prefs.gridRows
-    fun rowsFor(page: Int) = if (page == 0) rows - 1 else rows
+    /** Usable rows: page 1 loses its status row, and gains one when the dock is hidden there. */
+    fun rowsFor(page: Int) = if (page == 0) rows - 1 + (if (prefs.dockEnabled && prefs.hideDockOnFirstPage) 1 else 0) else rows
 
     init { load() }
 

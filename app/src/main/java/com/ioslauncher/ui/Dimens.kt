@@ -42,11 +42,18 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
     val gridBottom = (if (dockEnabled) dockTop else height - dockBottom) - indicatorHeight
     val cellHeight = (gridBottom - gridTop) / rows
 
+    /** "Hide Dock on Page 1 Only": page 1 extends into the dock space with one extra row. */
+    val page0ExtraRows = if (dockEnabled && prefs.hideDockOnFirstPage) 1 else 0
+    /** Grid rows drawn on [page] (including page 1's status row). */
+    fun gridRows(page: Int) = if (page == 0) rows + page0ExtraRows else rows
+    private val page0CellHeight = if (page0ExtraRows > 0) (height - dockBottom - indicatorHeight - gridTop) / (rows + page0ExtraRows) else cellHeight
+    fun cellH(page: Int) = if (page == 0) page0CellHeight else cellHeight
+
     private val labelBlock = if (showLabels) labelGap + labelTextSize * 1.25f else 0f
     /** Home Screen / App Library icon size (user scale, capped so icons never overlap on dense grids). */
     val iconSize = (60 * pt * prefs.homeIconScale).roundToInt()
         .coerceAtMost((cellWidth * 0.86f).toInt())
-        .coerceAtMost(((cellHeight - labelBlock) * 0.92f).toInt())
+        .coerceAtMost(((minOf(cellHeight, page0CellHeight) - labelBlock) * 0.92f).toInt())
         .coerceAtLeast((20 * pt).toInt())
 
     val libraryCardGap = (20 * pt).roundToInt()
@@ -57,6 +64,7 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
 
     /** Top of the icon inside a grid cell (icon + label block vertically centred). */
     val iconTopInCell = ((cellHeight - iconSize - labelBlock) / 2f).coerceAtLeast(0f)
+    fun iconTopIn(page: Int) = ((cellH(page) - iconSize - labelBlock) / 2f).coerceAtLeast(0f)
 
     fun dp(v: Float) = v * density
     fun pt(v: Float) = v * pt
