@@ -74,8 +74,11 @@ abstract class Overlay(context: Context, protected val host: OverlayHost) : Fram
         isFocusableInTouchMode = true
     }
 
+    /** Backdrop behind the overlay content; flat scrim by default. */
+    protected open fun backdrop(): android.graphics.drawable.Drawable = android.graphics.drawable.ColorDrawable(scrimColor)
+
     open fun show() {
-        setBackgroundColor(scrimColor)
+        background = backdrop()
         alpha = 0f
         animate().alpha(1f).setDuration(220).setUpdateListener { host.setOverlayBlur(alpha) }.start()
     }
@@ -289,6 +292,35 @@ class CategoryOverlay(context: Context, host: OverlayHost, category: LibraryCate
 @SuppressLint("ViewConstructor")
 class SearchOverlay(context: Context, host: OverlayHost, private val allApps: List<AppInfo>) : Overlay(context, host) {
     override val scrimColor = Color.argb(120, 0, 0, 0)
+
+    /**
+     * Layered backdrop over the blurred home screen: a deep vertical gradient (darker at the top for the
+     * search field and at the bottom for suggestions) plus a soft "stage light" behind the tile carousel.
+     */
+    override fun backdrop(): android.graphics.drawable.Drawable = object : android.graphics.drawable.Drawable() {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun draw(canvas: Canvas) {
+            val b = bounds; val h = b.height().toFloat(); val w = b.width().toFloat()
+            p.shader = android.graphics.LinearGradient(0f, 0f, 0f, h,
+                intArrayOf(Color.argb(150, 6, 8, 16), Color.argb(70, 10, 12, 24), Color.argb(95, 8, 10, 20), Color.argb(175, 4, 5, 10)),
+                floatArrayOf(0f, 0.32f, 0.6f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            canvas.drawRect(b, p)
+            val cy = stageY.takeIf { it > 0f } ?: h * 0.3f
+            p.shader = android.graphics.RadialGradient(w / 2f, cy, w * 0.75f,
+                intArrayOf(Color.argb(46, 160, 190, 255), Color.argb(14, 140, 170, 255), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.55f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            canvas.save(); canvas.scale(1f, 0.55f, w / 2f, cy)
+            canvas.drawCircle(w / 2f, cy, w * 0.75f, p)
+            canvas.restore()
+        }
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
+    }
+
+    /** Vertical centre of the tile carousel, for the stage light. */
+    private var stageY = 0f
     private val d = host.dimens
     private val field = EditText(context)
     private val content = FrameLayout(context)
@@ -363,6 +395,7 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
         drum.onDragStart = { hideKeyboard() }
         drum.onFocusChanged = { a -> letters.current = a?.let { letterOf(it) } ?: "" }
         content.addView(drum, LayoutParams(LayoutParams.MATCH_PARENT, drumH).apply { topMargin = drumTop })
+        stageY = drumTop + drumH * 0.42f
 
         // ---- A–Z strip -------------------------------------------------------------------------
         letters.onLetter = { l -> val pos = results.indexOfFirst { letterOf(it) == l }; if (pos >= 0) drum.scrollToItem(pos, animate = true) }

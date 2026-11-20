@@ -476,6 +476,36 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override fun setOverlayBlur(fraction: Float) {
         overlayBlur = fraction
         updateBlur()
+        applyHomeBackdrop(fraction)
+    }
+
+    private var lastBackdropRadius = -1
+
+    /**
+     * While an overlay (search, menu, folder, alert…) is up, the home screen recedes like iOS:
+     * a live blur of the icons/dock/widgets (RenderEffect), a slight zoom-out for depth and a dim.
+     */
+    private fun applyHomeBackdrop(fraction: Float) {
+        if (!built) return
+        val f = fraction.coerceIn(0f, 1f)
+        val e = f * f * (3 - 2 * f)
+        val radius = (e * dimens.dp(26f)).roundToInt()
+        val layers = listOfNotNull<View>(pager, dock, indicator, searchButton, editButtonsRow)
+        if (radius != lastBackdropRadius) {
+            lastBackdropRadius = radius
+            val effect = if (radius >= 1) android.graphics.RenderEffect.createBlurEffect(
+                radius.toFloat(), radius.toFloat(), android.graphics.Shader.TileMode.CLAMP) else null
+            layers.forEach { it.setRenderEffect(effect) }
+        }
+        if (unlockPrepared || closeAnim != null) return     // those animations own scale/alpha for now
+        val scale = 1f - 0.07f * e
+        for (v in listOf<View>(pager, dock)) {
+            v.pivotX = dimens.width / 2f
+            v.pivotY = if (v === dock) -(dimens.dockTop - dimens.height / 2f) else dimens.height / 2f
+            v.scaleX = scale; v.scaleY = scale
+        }
+        pager.alpha = 1f - 0.35f * e
+        dock.alpha = dockTargetAlpha() * (1f - 0.35f * e)
     }
 
     private fun updateBlur() {
