@@ -235,7 +235,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             unlockDelays.clear()
             playUnlock()
         } else if (returningFromApp) {
-            if (!playCloseToIcon()) playReturnFromApp()
+            if (!launcher.prefs.closeToIcon || !playCloseToIcon()) playReturnFromApp()
         }
         returningFromApp = false
         library.setApps(launcher.repository.apps)
@@ -566,7 +566,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             launcher.prefs.recordLaunch(app.key)
             returningFromApp = true
             // Remember the icon so the app can shrink back into it when closed.
-            lastLaunchKey = (view as? AppIconView)?.takeIf { it.source == IconSource.HOME || it.source == IconSource.DOCK }?.app?.key
+            lastLaunchKey = if (!launcher.prefs.closeToIcon) null else (view as? AppIconView)?.takeIf { it.source == IconSource.HOME || it.source == IconSource.DOCK }?.app?.key
             // Search closes once an app opens (carousel or its suggestions row).
             overlays.filterIsInstance<SearchOverlay>().forEach { it.close() }
         } catch (e: Exception) {

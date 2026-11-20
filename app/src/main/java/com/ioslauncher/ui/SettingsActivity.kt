@@ -140,6 +140,7 @@ class SettingsActivity : Activity() {
         group(listOf(
             switchRow("Hide Status Bar", prefs.hideStatusBar) { prefs.hideStatusBar = it; restartLauncher() },
             switchRow("Unlock Animation", prefs.unlockAnimation) { prefs.unlockAnimation = it },
+            switchRow("Close App into Icon Animation", prefs.closeToIcon) { prefs.closeToIcon = it },
             switchRow("Parallax & Glass Tilt", prefs.parallax) { prefs.parallax = it },
             switchRow("Add New Apps to Home Screen", prefs.autoAddNewApps) { prefs.autoAddNewApps = it },
             row("Change Wallpaper") {
