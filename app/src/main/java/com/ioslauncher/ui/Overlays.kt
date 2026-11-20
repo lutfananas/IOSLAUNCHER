@@ -283,32 +283,45 @@ class CategoryOverlay(context: Context, host: OverlayHost, category: LibraryCate
 }
 
 // ---------------------------------------------------------------------------------------------------
-// App Library search: alphabetical list + A–Z index + live filter
+// Search: icon carousel (cover-flow) + live filter + A–Z strip + suggestions
 // ---------------------------------------------------------------------------------------------------
 
 @SuppressLint("ViewConstructor")
 class SearchOverlay(context: Context, host: OverlayHost, private val allApps: List<AppInfo>) : Overlay(context, host) {
-    override val scrimColor = Color.argb(150, 0, 0, 0)
+    override val scrimColor = Color.argb(120, 0, 0, 0)
     private val d = host.dimens
     private val field = EditText(context)
-    private val list = RecyclerView(context)
-    private val adapter = ListAdapter()
-    private val index = AlphabetIndex(context)
     private val content = FrameLayout(context)
+    private val carousel = RecyclerView(context)
+    private val lm = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
+    private val adapter = CarouselAdapter()
+    private val nameView = TextView(context)
+    private val subView = TextView(context)
+    private val countView = TextView(context)
+    private val letters = LetterStrip(context)
+    private val suggestions = LinearLayout(context)
+    private val suggestionsTitle = TextView(context)
 
-    private sealed interface Row { data class Header(val letter: String) : Row; data class Item(val app: AppInfo) : Row }
+    /** Big centre icon, spacing between icon centres. */
+    private val bigIcon = d.pt(96f).toInt()
+    private val itemW = d.pt(104f).toInt()
+    private var centered = -1
+    private var results: List<AppInfo> = emptyList()
+    private val sorted = allApps.sortedWith(compareBy<AppInfo> { letterOf(it) == "#" }.thenBy { it.label.lowercase() })
 
     init {
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+
+        // ---- search field ------------------------------------------------------------------
         val bar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val fieldBox = FrameLayout(context).apply { background = GlassDrawable(d.searchBarHeight / 2f, Color.argb(30, 255, 255, 255)) }
         val glyph = object : View(context) {
             val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(200, 255, 255, 255); style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
             override fun onDraw(canvas: Canvas) = SearchPill.drawMagnifier(canvas, width / 2f, height / 2f, d.pt(15f), p)
         }
-        fieldBox.addView(glyph, FrameLayout.LayoutParams(d.pt(34f).toInt(), FrameLayout.LayoutParams.MATCH_PARENT))
+        fieldBox.addView(glyph, FrameLayout.LayoutParams(d.pt(36f).toInt(), FrameLayout.LayoutParams.MATCH_PARENT))
         field.apply {
-            hint = "App Library"
+            hint = "Search Apps"
             setHintTextColor(Color.argb(150, 255, 255, 255))
             setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(17f))
@@ -324,46 +337,105 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
             })
             setOnEditorActionListener { _, actionId, event ->
                 if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
-                    adapter.rows.firstNotNullOfOrNull { it as? Row.Item }?.let { launch(it.app, null) }
+                    results.getOrNull(centered.coerceAtLeast(0))?.let { launch(it, centerIconRect()) }
                     true
                 } else false
             }
         }
         fieldBox.addView(field, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT).apply {
-            leftMargin = d.pt(34f).toInt()
+            leftMargin = d.pt(36f).toInt()
         })
         bar.addView(fieldBox, LinearLayout.LayoutParams(0, d.searchBarHeight, 1f))
         bar.addView(TextView(context).apply {
-            text = "Cancel"
-            setTextColor(Color.WHITE)
+            text = "Cancel"; setTextColor(Color.WHITE)
             setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(17f))
             setPadding(d.pt(14f).toInt(), 0, 0, 0)
             setOnClickListener { close() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, d.searchBarHeight))
+        val barTop = d.gridTop - d.pt(4f).toInt()
         content.addView(bar, LayoutParams(LayoutParams.MATCH_PARENT, d.searchBarHeight).apply {
-            topMargin = d.gridTop - d.pt(4f).toInt(); leftMargin = d.librarySide; rightMargin = d.librarySide
+            topMargin = barTop; leftMargin = d.librarySide; rightMargin = d.librarySide
         })
 
-        list.layoutManager = LinearLayoutManager(context)
-        list.adapter = adapter
-        list.clipToPadding = false
-        list.setPadding(d.librarySide, 0, d.pt(30f).toInt(), d.bottomInset + d.pt(300f).toInt())
-        list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+        // ---- carousel ----------------------------------------------------------------------
+        val carouselTop = barTop + d.searchBarHeight + d.pt(26f).toInt()
+        val carouselH = (bigIcon * 1.25f).toInt()
+        val side = (d.width - itemW) / 2
+        carousel.layoutManager = lm
+        carousel.adapter = adapter
+        carousel.clipToPadding = false
+        carousel.clipChildren = false
+        carousel.overScrollMode = OVER_SCROLL_NEVER
+        carousel.setPadding(side, 0, side, 0)
+        androidx.recyclerview.widget.LinearSnapHelper().attachToRecyclerView(carousel)
+        carousel.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) = transformChildren()
             override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
                 if (state == RecyclerView.SCROLL_STATE_DRAGGING) hideKeyboard()
             }
         })
-        content.addView(list, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT).apply {
-            topMargin = d.gridTop + d.searchBarHeight + d.pt(12f).toInt()
-        })
-        index.onLetter = { letter ->
-            val pos = adapter.rows.indexOfFirst { it is Row.Header && it.letter == letter }
-            if (pos >= 0) (list.layoutManager as LinearLayoutManager).scrollToPositionWithOffset(pos, 0)
+        content.addView(carousel, LayoutParams(LayoutParams.MATCH_PARENT, carouselH).apply { topMargin = carouselTop })
+
+        // ---- centred app name / category ----------------------------------------------------
+        nameView.apply {
+            setTextColor(Color.WHITE); gravity = Gravity.CENTER; maxLines = 1
+            typeface = Typeface.create(Typeface.DEFAULT, 700, false)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(22f))
+            setShadowLayer(8f, 0f, 1f, Color.argb(80, 0, 0, 0))
         }
-        content.addView(index, LayoutParams(d.pt(22f).toInt(), LayoutParams.MATCH_PARENT, Gravity.END).apply {
-            topMargin = d.gridTop + d.searchBarHeight + d.pt(30f).toInt(); bottomMargin = d.bottomInset + d.pt(30f).toInt()
-            rightMargin = d.pt(2f).toInt()
+        subView.apply {
+            setTextColor(Color.argb(190, 255, 255, 255)); gravity = Gravity.CENTER; maxLines = 1
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(14f))
+        }
+        val nameTop = carouselTop + carouselH + d.pt(4f).toInt()
+        content.addView(nameView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = nameTop; leftMargin = d.librarySide; rightMargin = d.librarySide
         })
+        content.addView(subView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = nameTop + d.pt(30f).toInt()
+        })
+        countView.apply {
+            setTextColor(Color.argb(160, 255, 255, 255)); gravity = Gravity.CENTER
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(13f))
+        }
+        content.addView(countView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = carouselTop - d.pt(20f).toInt()
+        })
+
+        // ---- A–Z strip -----------------------------------------------------------------------
+        letters.onLetter = { l -> jumpToLetter(l) }
+        content.addView(letters, LayoutParams(LayoutParams.MATCH_PARENT, d.pt(30f).toInt()).apply {
+            topMargin = nameTop + d.pt(60f).toInt(); leftMargin = d.pt(12f).toInt(); rightMargin = d.pt(12f).toInt()
+        })
+
+        // ---- suggestions (most used) -----------------------------------------------------------
+        suggestionsTitle.apply {
+            text = "SUGGESTIONS"; setTextColor(Color.argb(170, 255, 255, 255))
+            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(13f))
+        }
+        val sugTop = nameTop + d.pt(108f).toInt()
+        content.addView(suggestionsTitle, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = sugTop; leftMargin = d.librarySide + d.pt(6f).toInt()
+        })
+        suggestions.orientation = LinearLayout.HORIZONTAL
+        suggestions.background = GlassDrawable(d.pt(28f), Color.argb(26, 255, 255, 255))
+        suggestions.setPadding(d.pt(8f).toInt(), d.pt(12f).toInt(), d.pt(8f).toInt(), d.pt(6f).toInt())
+        val prefs = LauncherApp.instance.prefs
+        val sug = allApps.filter { prefs.launchCount(it.key) > 0 }
+            .sortedByDescending { prefs.launchCount(it.key) / (1.0 + (System.currentTimeMillis() - prefs.lastLaunch(it.key)) / 86_400_000.0) }
+            .take(4).ifEmpty { allApps.take(4) }
+        val sugIcon = d.pt(56f).toInt()
+        for (a in sug) {
+            val v = AppIconView(context, host, IconSource.LIBRARY)
+            v.iconSize = sugIcon; v.iconTop = 0f; v.showLabel = true
+            v.bind(a)
+            suggestions.addView(v, LinearLayout.LayoutParams(0, sugIcon + d.pt(26f).toInt(), 1f))
+        }
+        content.addView(suggestions, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
+            topMargin = sugTop + d.pt(22f).toInt(); leftMargin = d.librarySide; rightMargin = d.librarySide
+        })
+
         filter("")
     }
 
@@ -374,24 +446,72 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
 
     private fun filter(q: String) {
         val query = q.trim().lowercase(Locale.getDefault())
-        val rows = ArrayList<Row>()
-        if (query.isEmpty()) {
-            var last = ""
-            val sorted = allApps.sortedWith(compareBy<AppInfo> { letterOf(it) == "#" }.thenBy { it.label.lowercase() })
-            for (a in sorted) {
-                val l = letterOf(a)
-                if (l != last) { rows += Row.Header(l); last = l }
-                rows += Row.Item(a)
-            }
-            index.visibility = VISIBLE
-        } else {
-            allApps.filter { it.label.lowercase().contains(query) || it.packageName.contains(query) }
-                .sortedBy { val i = it.label.lowercase().indexOf(query); if (i == 0) 0 else 1 }
-                .forEach { rows += Row.Item(it) }
-            index.visibility = GONE
-        }
-        adapter.rows = rows
+        results = if (query.isEmpty()) sorted else allApps
+            .filter { it.label.lowercase().contains(query) || it.packageName.contains(query) || it.category.lowercase().contains(query) }
+            .sortedWith(compareBy<AppInfo> {
+                val l = it.label.lowercase()
+                when { l.startsWith(query) -> 0; l.split(' ').any { w -> w.startsWith(query) } -> 1; l.contains(query) -> 2; else -> 3 }
+            }.thenBy { it.label.lowercase() })
         adapter.notifyDataSetChanged()
+        val searching = query.isNotEmpty()
+        letters.visibility = if (searching) INVISIBLE else VISIBLE
+        suggestions.visibility = if (searching) GONE else VISIBLE
+        suggestionsTitle.visibility = suggestions.visibility
+        countView.text = when {
+            !searching -> "${results.size} Apps"
+            results.isEmpty() -> "No Results"
+            results.size == 1 -> "1 Result"
+            else -> "${results.size} Results"
+        }
+        centered = -1
+        lm.scrollToPositionWithOffset(0, 0)
+        carousel.post { transformChildren() }
+        if (results.isEmpty()) { nameView.text = ""; subView.text = "" }
+    }
+
+    /** Cover-flow: centre item full size; neighbours shrink, fade, tilt away and dip on an arc. */
+    private fun transformChildren() {
+        val cx = carousel.width / 2f
+        var best = -1; var bestDist = Float.MAX_VALUE
+        for (i in 0 until carousel.childCount) {
+            val c = carousel.getChildAt(i)
+            val mid = (c.left + c.right) / 2f
+            val dist = mid - cx
+            val t = (kotlin.math.abs(dist) / (itemW * 2.2f)).coerceIn(0f, 1f)
+            val s = 1f - 0.5f * t
+            c.scaleX = s; c.scaleY = s
+            c.alpha = 1f - 0.65f * t
+            c.rotationY = (-dist / itemW * 22f).coerceIn(-55f, 55f)
+            c.translationY = t * t * d.pt(26f)
+            c.cameraDistance = 8000 * resources.displayMetrics.density
+            if (kotlin.math.abs(dist) < bestDist) { bestDist = kotlin.math.abs(dist); best = carousel.getChildAdapterPosition(c) }
+        }
+        if (best >= 0 && best != centered) {
+            centered = best
+            val a = results.getOrNull(best) ?: return
+            nameView.text = a.label
+            subView.text = a.category
+            letters.current = letterOf(a)
+            carousel.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+        }
+    }
+
+    private fun jumpToLetter(l: String) {
+        val pos = results.indexOfFirst { letterOf(it) == l }
+        if (pos >= 0) { lm.scrollToPositionWithOffset(pos, 0); carousel.post { transformChildren() } }
+    }
+
+    private fun centerOn(position: Int) {
+        val v = lm.findViewByPosition(position)
+        if (v == null) { lm.scrollToPositionWithOffset(position, 0); carousel.post { transformChildren() }; return }
+        carousel.smoothScrollBy(((v.left + v.right) / 2 - carousel.width / 2), 0)
+    }
+
+    private fun centerIconRect(): Rect? {
+        val v = lm.findViewByPosition(centered) ?: return null
+        val loc = IntArray(2); v.getLocationOnScreen(loc)
+        val l = loc[0] + (v.width - bigIcon) / 2; val t = loc[1] + (v.height - bigIcon) / 2
+        return Rect(l, t, l + bigIcon, t + bigIcon)
     }
 
     private fun launch(app: AppInfo, bounds: Rect?) {
@@ -403,7 +523,10 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
     override fun show() {
         super.show()
         content.translationY = -d.pt(30f)
-        content.animate().translationY(0f).setDuration(300).setInterpolator(HomePageView.EASE).start()
+        content.animate().translationY(0f).setDuration(320).setInterpolator(HomePageView.EASE).start()
+        // Carousel sweeps in from the right.
+        carousel.translationX = d.width * 0.4f; carousel.alpha = 0f
+        carousel.animate().translationX(0f).alpha(1f).setDuration(420).setInterpolator(HomePageView.EASE).start()
         field.requestFocus()
         field.post { field.windowInsetsController?.show(WindowInsets.Type.ime()) }
     }
@@ -416,82 +539,83 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
         super.close(after)
     }
 
-    private inner class ListAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-        var rows: List<Row> = emptyList()
-        override fun getItemCount() = rows.size
-        override fun getItemViewType(position: Int) = if (rows[position] is Row.Header) 0 else 1
-
+    private inner class CarouselAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        override fun getItemCount() = results.size
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-            val v: View = if (viewType == 0) TextView(context).apply {
-                setTextColor(Color.argb(170, 255, 255, 255))
-                typeface = Typeface.create(Typeface.DEFAULT, 600, false)
-                setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(15f))
-                setPadding(d.pt(4f).toInt(), d.pt(14f).toInt(), 0, d.pt(4f).toInt())
-            } else AppRow(context)
-            v.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+            val v = CarouselIcon(context)
+            v.layoutParams = RecyclerView.LayoutParams(itemW, ViewGroup.LayoutParams.MATCH_PARENT)
             return object : RecyclerView.ViewHolder(v) {}
         }
-
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-            when (val r = rows[position]) {
-                is Row.Header -> (holder.itemView as TextView).text = r.letter
-                is Row.Item -> (holder.itemView as AppRow).bind(r.app)
+            val v = holder.itemView as CarouselIcon
+            val a = results[position]
+            v.bind(a)
+            v.setOnClickListener {
+                val pos = holder.bindingAdapterPosition
+                if (pos == centered) launch(a, centerIconRect()) else centerOn(pos)
+            }
+            v.setOnLongClickListener {
+                val loc = IntArray(2); v.getLocationOnScreen(loc)
+                val l = loc[0] + (v.width - bigIcon) / 2; val t = loc[1] + (v.height - bigIcon) / 2
+                hideKeyboard()
+                host.onLibraryLongPress(a, Rect(l, t, l + bigIcon, t + bigIcon)); true
             }
         }
     }
 
-    private inner class AppRow(context: Context) : View(context) {
-        var app: AppInfo? = null
+    /** One carousel tile: big squircle icon with a soft reflection-like shadow. */
+    private inner class CarouselIcon(context: Context) : View(context) {
+        private var app: AppInfo? = null
         private var bmp: Bitmap? = null
-        private val iconSize = d.pt(40f).toInt()
-        private val rowH = d.pt(56f).toInt()
-        private val tp = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = d.pt(17f) }
-        private val sep = Paint().apply { color = Color.argb(50, 255, 255, 255) }
-        private val bp = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        private var pressed = false
-
-        init {
-            isClickable = true
-            setOnClickListener { app?.let { a -> launch(a, iconRect()) } }
-            setOnLongClickListener {
-                val a = app ?: return@setOnLongClickListener false
-                hideKeyboard()
-                host.onLibraryLongPress(a, iconRect()); true
-            }
+        private val p = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+        private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(60, 0, 0, 0)
+            maskFilter = android.graphics.BlurMaskFilter(d.pt(10f), android.graphics.BlurMaskFilter.Blur.NORMAL)
         }
-
-        private fun iconRect(): Rect {
-            val loc = IntArray(2); getLocationOnScreen(loc)
-            val t = loc[1] + (rowH - iconSize) / 2
-            return Rect(loc[0] + d.pt(4f).toInt(), t, loc[0] + d.pt(4f).toInt() + iconSize, t + iconSize)
-        }
+        init { isClickable = true; isLongClickable = true; setLayerType(LAYER_TYPE_SOFTWARE, null) }
 
         fun bind(a: AppInfo) {
-            app = a; bmp = null
-            LauncherApp.instance.icons.load(a, iconSize) { if (app?.key == a.key) { bmp = it; invalidate() } }
+            app = a; bmp = null; contentDescription = a.label
+            LauncherApp.instance.icons.load(a, bigIcon) { if (app?.key == a.key) { bmp = it; invalidate() } }
             invalidate()
         }
 
-        override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(MeasureSpec.getSize(w), rowH)
-
-        @SuppressLint("ClickableViewAccessibility")
-        override fun onTouchEvent(event: MotionEvent): Boolean {
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { pressed = true; invalidate() }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { pressed = false; invalidate() }
-            }
-            return super.onTouchEvent(event)
-        }
-
         override fun onDraw(canvas: Canvas) {
-            val a = app ?: return
-            if (pressed) canvas.drawColor(Color.argb(40, 255, 255, 255))
-            val l = d.pt(4f); val t = (rowH - iconSize) / 2f
-            bmp?.let { canvas.drawBitmap(it, null, RectF(l, t, l + iconSize, t + iconSize), bp) }
-            val tx = l + iconSize + d.pt(14f)
-            canvas.drawText(a.label, tx, rowH / 2f - (tp.ascent() + tp.descent()) / 2, tp)
-            canvas.drawRect(tx, rowH - 1f, width.toFloat(), rowH.toFloat(), sep)
+            val l = (width - bigIcon) / 2f; val t = (height - bigIcon) / 2f
+            canvas.drawOval(RectF(l + bigIcon * 0.12f, t + bigIcon * 0.9f, l + bigIcon * 0.88f, t + bigIcon * 1.08f), shadow)
+            bmp?.let { canvas.drawBitmap(it, null, RectF(l, t, l + bigIcon, t + bigIcon), p) }
         }
+    }
+}
+
+/** Horizontal A–Z strip; tap or drag to jump, current letter highlighted. */
+class LetterStrip(context: Context) : View(context) {
+    var onLetter: (String) -> Unit = {}
+    var current = ""; set(v) { if (field != v) { field = v; invalidate() } }
+    private val letters = ('A'..'Z').map { it.toString() } + "#"
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER; typeface = Typeface.create(Typeface.DEFAULT, 600, false) }
+    private val hl = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(70, 255, 255, 255) }
+    private var last = ""
+
+    override fun onDraw(canvas: Canvas) {
+        val step = width / letters.size.toFloat()
+        p.textSize = (step * 0.78f).coerceAtMost(height * 0.55f)
+        letters.forEachIndexed { i, s ->
+            val cx = step * i + step / 2
+            if (s == current) canvas.drawCircle(cx, height / 2f, minOf(step, height.toFloat()) * 0.48f, hl)
+            p.color = if (s == current) Color.WHITE else Color.argb(170, 255, 255, 255)
+            canvas.drawText(s, cx, height / 2f - (p.ascent() + p.descent()) / 2, p)
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        parent?.requestDisallowInterceptTouchEvent(true)
+        val i = (event.x / width * letters.size).toInt().coerceIn(0, letters.lastIndex)
+        val l = letters[i]
+        if (l != last) { last = l; performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK); onLetter(l) }
+        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) last = ""
+        return true
     }
 }
 

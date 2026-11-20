@@ -13,6 +13,9 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
 - **App Library.** Geser ke kiri melewati halaman terakhir: kategori otomatis (Suggestions, Recently Added, Social,
   Productivity & Finance, Entertainment, dll.) dengan 3 ikon besar + klaster 4 ikon kecil, kategori bisa dibuka penuh,
   plus pencarian dengan daftar A–Z dan indeks huruf.
+- **Pencarian carousel.** Tombol search (Page 1) dan kolom pencarian App Library membuka carousel ikon bergaya cover-flow:
+  ikon tengah besar, ikon di sampingnya mengecil, miring, dan memudar; nama dan kategori aplikasi di bawahnya; strip
+  huruf A–Z untuk lompat; baris *Suggestions* aplikasi yang paling sering dipakai; hasil langsung tersaring saat mengetik.
 - **Fullscreen.** Status bar disembunyikan (swipe dari tepi atas untuk menampilkannya sementara).
 - **Indikator baterai / Wi-Fi / sinyal di pojok kanan atas Page 1.** Baris pertama Page 1 dikosongkan kecuali satu
   glyph gabungan (dinaikkan seperempat ukuran ikon dari baris pertama, ukuran 70% ikon, dengan jam digital di atasnya): cincin baterai, ikon Wi-Fi di dalamnya, dan titik sinyal seluler, dengan persen baterai di bawahnya.

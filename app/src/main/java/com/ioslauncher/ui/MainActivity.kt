@@ -517,6 +517,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             la.startMainActivity(app.component, app.user, bounds, opts.toBundle())
             launcher.prefs.recordLaunch(app.key)
             returningFromApp = true
+            // Search closes once an app opens (carousel or its suggestions row).
+            overlays.filterIsInstance<SearchOverlay>().forEach { it.close() }
         } catch (e: Exception) {
             Toast.makeText(this, "Unable to open ${app.label}", Toast.LENGTH_SHORT).show()
         }
