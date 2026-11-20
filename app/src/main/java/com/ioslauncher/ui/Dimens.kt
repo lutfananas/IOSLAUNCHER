@@ -64,11 +64,15 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
         .coerceAtMost(((minOf(cellHeight, page0CellHeight) - labelBlock) * 0.92f).toInt())
         .coerceAtLeast((20 * pt).toInt())
 
-    val libraryCardGap = (20 * pt).roundToInt()
-    val librarySide = (20 * pt).roundToInt()
+    // App Library, measured from iOS 18/26: cards ≈ 41% of the width, 6.5% side margins, 5.4% gap.
+    val libraryCardGap = (21 * pt).roundToInt()
+    val librarySide = (25 * pt).roundToInt()
     val libraryCard = (width - 2 * librarySide - libraryCardGap) / 2
 
-    val searchBarHeight = (40 * pt).roundToInt()
+    /** Capsule search field (App Library header and the search screen). */
+    val searchBarHeight = (45 * pt).roundToInt()
+    /** Top of the App Library / search field: 14pt lower than the grid top. */
+    val searchBarTop = gridTop - (4 * pt).roundToInt() + (14 * pt).roundToInt()
 
     /** Top of the icon inside a grid cell (icon + label block vertically centred). */
     val iconTopInCell = ((cellHeight - iconSize - labelBlock) / 2f).coerceAtLeast(0f)

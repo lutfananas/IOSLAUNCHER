@@ -80,13 +80,13 @@ class AppLibraryView(context: Context, private val host: LibraryHost) : FrameLay
         recycler.adapter = adapter
         recycler.clipToPadding = false
         recycler.overScrollMode = OVER_SCROLL_NEVER
-        recycler.setPadding(d.librarySide, d.gridTop + d.searchBarHeight + d.pt(18f).toInt(), d.librarySide, d.bottomInset + d.pt(30f).toInt())
+        recycler.setPadding(d.librarySide, d.searchBarTop + d.searchBarHeight + d.pt(32f).toInt(), d.librarySide, d.bottomInset + d.pt(30f).toInt())
         recycler.addItemDecoration(object : RecyclerView.ItemDecoration() {
             override fun getItemOffsets(out: Rect, view: View, parent: RecyclerView, state: RecyclerView.State) {
                 val pos = parent.getChildAdapterPosition(view)
                 val half = d.libraryCardGap / 2
                 if (pos % 2 == 0) out.right = half else out.left = half
-                out.bottom = d.pt(14f).toInt()
+                out.bottom = d.pt(20f).toInt()
             }
         })
         recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -94,7 +94,7 @@ class AppLibraryView(context: Context, private val host: LibraryHost) : FrameLay
         })
         addView(recycler, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val lp = LayoutParams(LayoutParams.MATCH_PARENT, d.searchBarHeight).apply {
-            topMargin = d.gridTop - d.pt(4f).toInt()
+            topMargin = d.searchBarTop
             leftMargin = d.librarySide; rightMargin = d.librarySide
         }
         addView(searchPill, lp)
@@ -125,12 +125,12 @@ class AppLibraryView(context: Context, private val host: LibraryHost) : FrameLay
             val label = TextView(context).apply {
                 setTextColor(Color.WHITE)
                 textSize = 0f
-                setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, d.pt(12.5f))
+                setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, d.pt(14f))
                 typeface = Typeface.create(Typeface.DEFAULT, 500, false)
                 gravity = Gravity.CENTER
                 maxLines = 1
                 setShadowLayer(4f, 0f, 1f, Color.argb(70, 0, 0, 0))
-                setPadding(0, d.pt(6f).toInt(), 0, 0)
+                setPadding(0, d.pt(9f).toInt(), 0, 0)
             }
             col.addView(label, LinearLayout.LayoutParams(d.libraryCard, ViewGroup.LayoutParams.WRAP_CONTENT))
             col.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
@@ -163,9 +163,9 @@ class SearchPill(context: Context, private val d: Dimens) : View(context) {
 
     override fun onDraw(canvas: Canvas) {
         Glass.drawRect(canvas, this, RectF(0f, 0f, width.toFloat(), height.toFloat()), height / 2f, Color.argb(28, 255, 255, 255), false, path)
-        tp.textSize = d.pt(17f)
+        tp.textSize = d.pt(19f)
         val tw = tp.measureText(text)
-        val g = d.pt(15f)
+        val g = d.pt(19f)
         val cx = width / 2f + g * 0.7f
         val y = height / 2f - (tp.ascent() + tp.descent()) / 2
         canvas.drawText(text, cx, y, tp)
@@ -242,10 +242,12 @@ class CategoryCardView(context: Context, private val host: AppLibraryView.Librar
         invalidate()
     }
 
-    private fun pad() = host.dimens.libraryCard * 0.085f
+    // iOS proportions: padding 7.5% of the card, big icons 38.7%, small icons 41% of a big one,
+    // the 2×2 cluster centred in the fourth cell.
+    private fun pad() = host.dimens.libraryCard * 0.075f
     private fun bigSize() = ((host.dimens.libraryCard - 3 * pad()) / 2f).toInt()
-    private fun smallGap() = bigSize() * 0.12f
-    private fun smallSize() = ((bigSize() - smallGap()) / 2f).toInt()
+    private fun smallGap() = bigSize() * 0.09f
+    private fun smallSize() = (bigSize() * 0.41f).toInt()
 
     private fun slotRect(slot: Int): RectF {
         val p = pad(); val b = bigSize()
@@ -271,8 +273,8 @@ class CategoryCardView(context: Context, private val host: AppLibraryView.Librar
     override fun onDraw(canvas: Canvas) {
         val cat = category ?: return
         val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
-        IosShape.roundRect(r, width * 0.135f, path)
-        Glass.draw(canvas, this, path, r, width * 0.135f, Color.argb(24, 255, 255, 255), shadow = false)
+        IosShape.roundRect(r, width * 0.147f, path)
+        Glass.draw(canvas, this, path, r, width * 0.147f, Color.argb(30, 255, 255, 255), shadow = false)
         val big = bigSize(); val small = smallSize()
         val bigApps = if (cluster()) cat.apps.take(3) else cat.apps.take(4)
         bigApps.forEachIndexed { i, app ->
@@ -284,8 +286,9 @@ class CategoryCardView(context: Context, private val host: AppLibraryView.Librar
             val r = slotRect(3)
             val g = smallGap()
             cat.apps.drop(3).take(4).forEachIndexed { i, app ->
-                val l = r.left + (i % 2) * (small + g)
-                val t = r.top + (i / 2) * (small + g)
+                val off = (r.width() - (2 * small + g)) / 2f
+                val l = r.left + off + (i % 2) * (small + g)
+                val t = r.top + off + (i / 2) * (small + g)
                 bitmaps["${app.key}@$small"]?.let { canvas.drawBitmap(it, null, RectF(l, t, l + small, t + small), bmpPaint) }
             }
         }

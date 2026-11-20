@@ -375,7 +375,7 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
             setPadding(d.pt(14f).toInt(), 0, 0, 0)
             setOnClickListener { close() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, d.searchBarHeight))
-        val barTop = d.gridTop - d.pt(4f).toInt() + d.pt(15f).toInt()
+        val barTop = d.searchBarTop          // same spot as the App Library field it opens from
         content.addView(bar, LayoutParams(LayoutParams.MATCH_PARENT, d.searchBarHeight).apply {
             topMargin = barTop; leftMargin = d.librarySide; rightMargin = d.librarySide
         })
