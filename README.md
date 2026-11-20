@@ -42,6 +42,7 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
   kaca yang membiaskan wallpaper (refraksi + sedikit pemisahan warna di tepi, Android 13+), kilau di bagian atas, dan tepi
   spekular. Blur, refraksi, frost/tint, dan kilau bisa diatur 0–200% di *Settings → Liquid Glass*. Android 14+ hanya mengizinkan aplikasi membaca wallpaper dengan izin *All files access*
   (*Settings → Allow Wallpaper Access*); tanpa izin itu kaca tampil sebagai frosted glass.
+- Tombol mode edit (Settings, + widget, Done) sebaris dengan indikator baterai/Wi-Fi/sinyal, di sebelah kirinya.
 - Mode edit (jiggle): tekan lama ruang kosong atau pilih *Edit Home Screen*; seret ikon untuk menyusun ulang, pindah halaman
   di tepi layar, atau masukkan ke dock (maks. 4). Tombol "−" menghapus dari Home Screen (app tetap ada di App Library).
 - Menu konteks gaya iOS saat ikon ditekan lama, swipe ke bawah untuk pencarian, swipe ke bawah dari pojok atas
@@ -54,8 +55,11 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
 ./gradlew assembleRelease
 ```
 
-APK: `app/build/outputs/apk/release/app-release.apk` (ditandatangani dengan debug key, bisa langsung di-install).
-GitHub Actions (`.github/workflows/build.yml`) juga membangun APK di setiap push; unduh dari tab *Actions → Artifacts*.
+APK: `app/build/outputs/apk/release/app-release.apk`, ditandatangani dengan *sideload key* di `keystore/` (kunci publik
+untuk pemasangan pribadi, bukan untuk Play Store) sehingga semua build bisa saling meng-update.
+
+**Rilis:** push tag `v*` (mis. `git tag v1.0.1 && git push origin v1.0.1`) → GitHub Actions (`release.yml`) membangun APK
+dan membuat GitHub Release dengan APK terlampir. Setiap push juga membangun APK di tab *Actions → Artifacts* (`build.yml`).
 
 Setelah install, tekan tombol Home dan pilih **iOS Launcher** sebagai aplikasi Home default
 (atau buka *Launcher Settings → Set as Default Home App*).

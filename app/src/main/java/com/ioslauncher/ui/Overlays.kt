@@ -475,8 +475,7 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
 
     private fun launch(app: AppInfo, bounds: Rect?) {
         hideKeyboard()
-        host.launchApp(this, app, bounds)
-        close()
+        host.launchApp(this, app, bounds)      // the launcher removes this overlay once it's covered by the app
     }
 
     override fun show() {

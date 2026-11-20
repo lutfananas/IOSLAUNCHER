@@ -56,6 +56,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     private lateinit var settingsButton: TextView
     private lateinit var addWidgetButton: TextView
     private val editButtons get() = listOf(doneButton, settingsButton, addWidgetButton)
+    private var editButtonsRow: View? = null
+    private var editRowLift = 0f
 
     // ---- Widgets ----
     private val widgetManager by lazy { android.appwidget.AppWidgetManager.getInstance(this) }
@@ -198,8 +200,15 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         runCatching { widgetHost.startListening() }
     }
 
+    private var closeSearchOnStop = false
+
     override fun onStop() {
         super.onStop()
+        if (closeSearchOnStop) {
+            closeSearchOnStop = false
+            overlays.filterIsInstance<SearchOverlay>().forEach { it.hideKeyboard(); removeOverlay(it) }
+            if (overlays.isEmpty()) setOverlayBlur(0f)
+        }
         statusMonitor.stop()
         runCatching { widgetHost.stopListening() }
     }
@@ -316,19 +325,25 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             setTextSize(TypedValue.COMPLEX_UNIT_PX, dimens.pt(22f)); setPadding(0, 0, 0, dimens.pt(2f).roundToInt())
             contentDescription = "Add Widget"
         }
-        val pillTop = (dimens.gridTop - dimens.pt(34f)).roundToInt().coerceAtLeast(dimens.pt(8f).roundToInt())
         val pillH = dimens.pt(30f).roundToInt()
-        // Aligned with the outer edges of the first / last icon column.
-        val edge = dimens.sidePadding + (dimens.cellWidth - dimens.iconSize) / 2
-        root.addView(doneButton, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, pillH, Gravity.END).apply {
-            topMargin = pillTop; rightMargin = edge
+        // One row — Settings, +, Done — level with the battery/Wi-Fi/signal glyph and just to its left.
+        // Glyph geometry mirrors StatusClusterView: cell lifted by icon/4, glyph = 70% icon, bottom-aligned to the icon.
+        val glyph = dimens.iconSize * StatusClusterView.GLYPH_RATIO
+        val glyphCenterY = dimens.gridTop - dimens.iconSize / 4f + dimens.iconTopIn(0) + dimens.iconSize - glyph / 2f
+        val glyphLeft = dimens.sidePadding + (dimens.cols - 1) * dimens.cellWidth + (dimens.cellWidth - glyph) / 2f
+        val gapPt = dimens.pt(8f).roundToInt()
+        val editRow = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+        editRow.addView(settingsButton, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, pillH))
+        editRow.addView(addWidgetButton, android.widget.LinearLayout.LayoutParams(pillH, pillH).apply { leftMargin = gapPt })
+        editRow.addView(doneButton, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, pillH).apply { leftMargin = gapPt })
+        val rowTop = (glyphCenterY - pillH / 2f).roundToInt().coerceAtLeast(dimens.pt(6f).roundToInt())
+        root.addView(editRow, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, pillH, Gravity.END).apply {
+            topMargin = rowTop
+            rightMargin = (dimens.width - glyphLeft + dimens.pt(10f)).roundToInt()
         })
-        val leftGroup = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
-        leftGroup.addView(settingsButton, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, pillH))
-        leftGroup.addView(addWidgetButton, android.widget.LinearLayout.LayoutParams(pillH, pillH).apply { leftMargin = dimens.pt(8f).roundToInt() })
-        root.addView(leftGroup, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, pillH, Gravity.START).apply {
-            topMargin = pillTop; leftMargin = edge
-        })
+        // Other pages have icons in their top row: there the buttons ride up above the grid.
+        editRowLift = (rowTop - (dimens.gridTop - dimens.pt(34f)).coerceAtLeast(dimens.pt(6f))).coerceAtLeast(0f)
+        editButtonsRow = editRow
 
         built = true
         cleanupWidgetIds()
@@ -420,6 +435,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         // Don't let the invisible search button catch taps on the App Library.
         searchButton?.let { it.visibility = if (barAlpha(it) < 0.02f) View.INVISIBLE else View.VISIBLE }
         indicator.position = position
+        editButtonsRow?.translationY = -editRowLift * position.coerceIn(0f, 1f)
         // Glass on moving pages must re-sample the (static) wallpaper.
         val lo = kotlin.math.floor(position).toInt(); val hi = kotlin.math.ceil(position).toInt()
         for (i in lo..hi) homePages.getOrNull(i)?.folderViews?.forEach { it.invalidate() }
@@ -487,7 +503,6 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         editButtons.forEach {
             it.visibility = View.VISIBLE; it.alpha = 0f; it.animate().alpha(1f).setDuration(200).start()
         }
-        homePages.firstOrNull()?.statusView?.animate()?.alpha(0f)?.setDuration(200)?.start()
     }
 
     fun exitEditMode() {
@@ -498,7 +513,6 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         editButtons.forEach { b ->
             b.animate().alpha(0f).setDuration(200).withEndAction { b.visibility = View.GONE }.start()
         }
-        homePages.firstOrNull()?.statusView?.animate()?.alpha(1f)?.setDuration(200)?.start()
         layoutStore.normalize()
         layoutStore.save()
         applyLayout(true)
@@ -513,14 +527,17 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         val la = getSystemService(LauncherApps::class.java)
         val bounds = iconBounds ?: Rect(dimens.width / 2, dimens.height / 2, dimens.width / 2 + 1, dimens.height / 2 + 1)
         val opts = ActivityOptions.makeScaleUpAnimation(root, bounds.left, bounds.top, bounds.width(), bounds.height())
+        // Icon splash while the app starts, instead of an empty window that reads as a blink.
+        if (android.os.Build.VERSION.SDK_INT >= 33) opts.setSplashScreenStyle(android.window.SplashScreen.SPLASH_SCREEN_STYLE_ICON)
         try {
             la.startMainActivity(app.component, app.user, bounds, opts.toBundle())
             launcher.prefs.recordLaunch(app.key)
             returningFromApp = true
             // Remember the icon so the app can shrink back into it when closed.
             lastLaunchKey = (view as? AppIconView)?.takeIf { it.source == IconSource.HOME || it.source == IconSource.DOCK }?.app?.key
-            // Search closes once an app opens (carousel or its suggestions row).
-            overlays.filterIsInstance<SearchOverlay>().forEach { it.close() }
+            // Search closes once the app covers the launcher (onStop) — animating it away now would
+            // change the window blur mid-launch and cause a visible blink.
+            closeSearchOnStop = overlays.any { it is SearchOverlay }
         } catch (e: Exception) {
             Toast.makeText(this, "Unable to open ${app.label}", Toast.LENGTH_SHORT).show()
         }

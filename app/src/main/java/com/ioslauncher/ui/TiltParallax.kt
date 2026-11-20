@@ -28,8 +28,8 @@ class TiltParallax(context: Context, private val onTilt: (Float, Float) -> Unit)
         if (!running) return
         running = false
         sm.unregisterListener(this)
-        x = 0f; y = 0f
-        onTilt(0f, 0f)
+        // Keep the current offset: snapping to 0 here moved the whole grid while an app was opening.
+        // On the next start the baseline resets, so the offset eases back to neutral smoothly.
     }
 
     override fun onSensorChanged(e: SensorEvent) {
