@@ -281,11 +281,12 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             sb.setOnClickListener { openSearch() }
             val size = dimens.searchButtonSize
             root.addView(sb, FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.END).apply {
-                val band = if (dimens.dockEnabled) dimens.page0Band else dimens.indicatorHeight
-                bottomMargin = dimens.dockBottom + (band - size) / 2
+                bottomMargin = (dimens.dockBottom + dimens.searchCenterFromBottom - size / 2f).roundToInt()
                 rightMargin = dimens.sidePadding + (dimens.cellWidth - size) / 2
             })
             searchButton = sb
+            // No dock at all: dots raised above the search button.
+            if (!dimens.dockEnabled) indicator.translationY = -(dimens.dotsCenterFromBottom - dimens.indicatorHeight / 2f)
         }
         Glass.load(this, width, height)
 
@@ -384,7 +385,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             bottomBar.forEach { it.alpha = barAlpha(it) }
             // Page 1 grid uses the dock's space: the dots slide down into the bottom band.
             if (dimens.page0ExtraRows > 0)
-                indicator.translationY = firstPageHide * (dimens.dockHeight + dimens.indicatorHeight / 2f - dimens.page0Band / 2f)
+                indicator.translationY = firstPageHide * (dimens.dockHeight + dimens.indicatorHeight / 2f - dimens.dotsCenterFromBottom)
         }
         // Don't let the invisible search button catch taps on the App Library.
         searchButton?.let { it.visibility = if (barAlpha(it) < 0.02f) View.INVISIBLE else View.VISIBLE }

@@ -36,7 +36,11 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
     val dockTop = height - dockBottom - dockHeight
 
     /** Without a dock the bottom row is taller: page dots + the round glass search button. */
-    val indicatorHeight = (if (dockEnabled) 30 * pt else 58 * pt).roundToInt()
+    val indicatorHeight = (if (dockEnabled) 30 * pt else BAND * pt).roundToInt()
+    /** Without a dock: search button centre and page-dot centre, measured up from the dock baseline. */
+    val searchCenterFromBottom = 29 * pt
+    /** Dots sit half a 100%-size icon (30pt) above the search button. */
+    val dotsCenterFromBottom = searchCenterFromBottom + 30 * pt
     val searchButtonSize = (46 * pt).roundToInt()
     val gridTop = topInset.coerceAtLeast((24 * pt).roundToInt()) + (14 * pt).roundToInt()
     val gridBottom = (if (dockEnabled) dockTop else height - dockBottom) - indicatorHeight
@@ -47,7 +51,7 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
     /** Grid rows drawn on [page] (including page 1's status row). */
     fun gridRows(page: Int) = if (page == 0) rows + page0ExtraRows else rows
     /** Bottom band (dots + search button) on page 1 when the dock is hidden there. */
-    val page0Band = if (page0ExtraRows > 0) (58 * pt).roundToInt() else indicatorHeight
+    val page0Band = if (page0ExtraRows > 0) (BAND * pt).roundToInt() else indicatorHeight
     private val page0CellHeight = if (page0ExtraRows > 0) (height - dockBottom - page0Band - gridTop) / (rows + page0ExtraRows) else cellHeight
     /** Search button shows whenever the dock is off — everywhere, or just on page 1. */
     val showSearchButton = !dockEnabled || page0ExtraRows > 0
@@ -69,6 +73,8 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
     /** Top of the icon inside a grid cell (icon + label block vertically centred). */
     val iconTopInCell = ((cellHeight - iconSize - labelBlock) / 2f).coerceAtLeast(0f)
     fun iconTopIn(page: Int) = ((cellH(page) - iconSize - labelBlock) / 2f).coerceAtLeast(0f)
+
+    companion object { private const val BAND = 72f }
 
     fun dp(v: Float) = v * density
     fun pt(v: Float) = v * pt
