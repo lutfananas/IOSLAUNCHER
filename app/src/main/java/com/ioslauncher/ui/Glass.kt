@@ -189,7 +189,8 @@ object Glass {
                 shadowPaint.setShadowLayer(14 * dm, 0f, 4 * dm, Color.argb(45, 0, 0, 0))
                 canvas.drawPath(path, shadowPaint)
             }
-            val rs = if (liquid && Build.VERSION.SDK_INT >= 33 && !shaderFailed) {
+            // RuntimeShader is GPU-only: snapshots drawn into a Bitmap canvas use the plain blurred sample.
+            val rs = if (liquid && Build.VERSION.SDK_INT >= 33 && !shaderFailed && canvas.isHardwareAccelerated) {
                 runCatching { refraction() }.onFailure { shaderFailed = true }.getOrNull()
             } else null
             if (rs != null && Build.VERSION.SDK_INT >= 33) {

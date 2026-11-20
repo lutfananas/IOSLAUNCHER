@@ -150,6 +150,26 @@ class SettingsActivity : Activity() {
         footer("Close App into Icon is experimental: on some phones it makes the next app open show the app's splash screen.")
         footer("Page 1 keeps its top row free for the battery, Wi-Fi and signal indicator. Long-press empty space to edit the Home Screen; swipe left past the last page for the App Library.")
 
+        val crash = LauncherApp.instance.crashFile()
+        if (crash.exists()) {
+            section("LAST CRASH")
+            group(listOf(
+                row("Copy Crash Report", accent = true) {
+                    val cm = getSystemService(android.content.ClipboardManager::class.java)
+                    cm.setPrimaryClip(android.content.ClipData.newPlainText("iOS Launcher crash", crash.readText()))
+                    android.widget.Toast.makeText(this, "Crash report copied — paste it in the chat", android.widget.Toast.LENGTH_LONG).show()
+                },
+                row("Share Crash Report") {
+                    runCatching {
+                        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain")
+                            .putExtra(Intent.EXTRA_TEXT, crash.readText()), "Share crash report"))
+                    }
+                },
+                row("Clear Crash Report") { crash.delete(); build() },
+            ))
+            footer(crash.readLines().firstOrNull().orEmpty())
+        }
+
         section("ABOUT")
         group(listOf(row("Battery / Wi-Fi / signal indicator adapted from Duo Launcher (MIT License)") {}))
         list.addView(View(this), LinearLayout.LayoutParams(1, (40 * dp).toInt()))

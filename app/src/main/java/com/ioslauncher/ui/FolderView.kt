@@ -227,14 +227,37 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
     override fun dragSnapshot(): Bitmap? {
         if (width == 0 || height == 0) return null
         val r = computeBg()
-        val full = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val wasEdit = editMode; editMode = false
-        val rot = rotation; rotation = 0f
-        draw(Canvas(full))
-        editMode = wasEdit; rotation = rot
-        return Bitmap.createBitmap(full, r.left.toInt().coerceAtLeast(0), r.top.toInt().coerceAtLeast(0),
-            r.width().toInt().coerceAtMost(width - r.left.toInt()), r.height().toInt().coerceAtMost(height - r.top.toInt()))
+        val wasEdit = editMode
+        val rot = rotation
+        return try {
+            val full = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            editMode = false; rotation = 0f
+            draw(Canvas(full))
+            val x = r.left.toInt().coerceIn(0, width - 1)
+            val y = r.top.toInt().coerceIn(0, height - 1)
+            val w = r.width().toInt().coerceIn(1, width - x)
+            val h = r.height().toInt().coerceIn(1, height - y)
+            Bitmap.createBitmap(full, x, y, w, h)
+        } catch (e: Throwable) {
+            android.util.Log.w("FolderView", "snapshot failed", e)
+            simpleSnapshot(r)
+        } finally {
+            editMode = wasEdit; rotation = rot
+        }
     }
+
+    /** Plain tile + mini icons, drawn without any glass effect — used if the full snapshot fails. */
+    private fun simpleSnapshot(r: RectF): Bitmap? = runCatching {
+        val w = r.width().toInt().coerceAtLeast(1); val h = r.height().toInt().coerceAtLeast(1)
+        val b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val c = Canvas(b)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(110, 255, 255, 255) }
+        c.drawPath(IosShape.roundRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), d().iconSize * IosShape.ICON_CORNER_RATIO), p)
+        c.translate(-r.left, -r.top)
+        val g = grid()
+        apps.take(g.cols * g.rows).forEachIndexed { i, a -> bitmaps[a.key]?.let { c.drawBitmap(it, null, slotRect(i, g), bmpPaint) } }
+        b
+    }.getOrNull()
 
     private fun edgeAt(x: Float, y: Float): Int {
         if (inDock) return 0

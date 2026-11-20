@@ -158,8 +158,16 @@ class WidgetCell(context: Context, private val host: LauncherHost, val key: Stri
         if (hostView.width == 0 || hostView.height == 0) return null
         val b = Bitmap.createBitmap(hostView.width, hostView.height, Bitmap.Config.ARGB_8888)
         val c = Canvas(b)
-        c.clipPath(IosShape.roundRect(RectF(0f, 0f, b.width.toFloat(), b.height.toFloat()), radius()))
-        hostView.draw(c)
+        val shape = IosShape.roundRect(RectF(0f, 0f, b.width.toFloat(), b.height.toFloat()), radius())
+        try {
+            c.clipPath(shape)
+            hostView.draw(c)
+        } catch (e: Throwable) {
+            // e.g. "Software rendering doesn't support hardware bitmaps": fall back to a plain glass tile.
+            android.util.Log.w("WidgetCell", "snapshot failed", e)
+            b.eraseColor(Color.TRANSPARENT)
+            Canvas(b).drawPath(shape, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(120, 255, 255, 255) })
+        }
         return b
     }
 
