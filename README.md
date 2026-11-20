@@ -72,3 +72,11 @@ Setelah install, tekan tombol Home dan pilih **iOS Launcher** sebagai aplikasi H
 - Blur latar App Library memakai *cross-window blur* Android. Jika perangkat mematikannya (mis. hemat baterai),
   launcher memakai latar gelap transparan sebagai gantinya.
 - Font SF Pro tidak disertakan karena lisensi Apple; launcher memakai font sistem.
+
+## Hak cipta
+
+© 2026 [lutfananas](https://github.com/lutfananas). **All rights reserved.** Lihat [`LICENSE`](LICENSE).
+
+APK boleh dipasang untuk pemakaian pribadi. Kode sumber, desain, dan animasi tidak boleh disalin, dimodifikasi,
+didistribusikan ulang, atau diakui sebagai karya orang lain tanpa izin tertulis. Komponen pihak ketiga mengikuti
+lisensinya masing-masing (lihat `THIRD_PARTY_NOTICES.md`).

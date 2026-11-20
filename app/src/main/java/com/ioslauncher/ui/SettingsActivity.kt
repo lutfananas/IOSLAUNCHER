@@ -1,3 +1,6 @@
+/*
+ * iOS Launcher — Copyright (c) 2026 lutfananas. All rights reserved. See LICENSE.
+ */
 package com.ioslauncher.ui
 
 import android.app.Activity
@@ -171,7 +174,12 @@ class SettingsActivity : Activity() {
         }
 
         section("ABOUT")
-        group(listOf(row("Battery / Wi-Fi / signal indicator adapted from Duo Launcher (MIT License)") {}))
+        group(listOf(
+            row("© 2026 lutfananas. All rights reserved.") {
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/lutfananas"))) }
+            },
+            row("Battery / Wi-Fi / signal indicator adapted from Duo Launcher (MIT License)") {},
+        ))
         list.addView(View(this), LinearLayout.LayoutParams(1, (40 * dp).toInt()))
     }
 

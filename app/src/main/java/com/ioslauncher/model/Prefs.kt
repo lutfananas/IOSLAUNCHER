@@ -1,3 +1,6 @@
+/*
+ * iOS Launcher — Copyright (c) 2026 lutfananas. All rights reserved. See LICENSE.
+ */
 package com.ioslauncher.model
 
 import android.content.Context

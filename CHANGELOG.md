@@ -90,3 +90,6 @@ Build uji yang dibagikan selama pengembangan, sebelum rilis v1.0.0:
 27. App Library didesain ulang dengan proporsi iOS; kotak search turun 14pt.
 28. Folder di dock.
 29. Perbaikan crash saat menyeret folder; perekam crash.
+
+---
+© 2026 lutfananas. All rights reserved. Lihat LICENSE di repositori.

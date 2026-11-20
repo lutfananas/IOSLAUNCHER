@@ -1,0 +1,25 @@
+iOS Launcher
+Copyright (c) 2026 lutfananas (https://github.com/lutfananas). All rights reserved.
+
+This software, including its source code, design, layout, animations, assets and documentation
+(the "Software"), is the proprietary work of the copyright holder.
+
+You MAY:
+  - download and install the released APK on your own devices for personal, non-commercial use;
+  - view the source code in this repository.
+
+You MAY NOT, without prior written permission from the copyright holder:
+  - copy, modify, merge, translate or create derivative works of the Software or any part of it;
+  - publish, distribute, sublicense, sell, re-upload or otherwise make the Software or any modified
+    version available to others, including in app stores or on other websites;
+  - remove or alter this notice, or present the Software (or parts of it) as your own work.
+
+Third-party components keep their own licenses and are not covered by the restrictions above.
+See THIRD_PARTY_NOTICES.md (notably the Duo Launcher status-indicator code, MIT License, and
+AndroidX libraries, Apache License 2.0).
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED. IN NO EVENT
+SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM THE
+USE OF THE SOFTWARE.
+
+For permission requests, contact the copyright holder through https://github.com/lutfananas.

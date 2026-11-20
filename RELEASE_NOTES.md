@@ -57,3 +57,6 @@ Launcher bergaya iOS untuk Android 17 (berjalan di Android 12 ke atas).
 - APK ditandatangani dengan kunci sideload yang sama di setiap build, sehingga update bisa dipasang langsung.
 
 **Catatan:** untuk blur kaca asli di Android 14+, aktifkan *Settings → Liquid Glass → Allow Wallpaper Access*. APK ditandatangani dengan kunci sideload publik — aman untuk pemasangan pribadi, bukan untuk Play Store.
+
+---
+© 2026 lutfananas. All rights reserved. Lihat LICENSE di repositori.

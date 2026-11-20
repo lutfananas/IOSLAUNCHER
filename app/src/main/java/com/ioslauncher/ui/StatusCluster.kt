@@ -1,4 +1,6 @@
 /*
+ * iOS Launcher — modifications Copyright (c) 2026 lutfananas. The original Duo Launcher portions remain under the MIT License.
+ *
  * Battery / Wi-Fi / cellular cluster.
  *
  * Ported from Duo Launcher (https://github.com/jakesgoodapps/DuoLauncher) —
