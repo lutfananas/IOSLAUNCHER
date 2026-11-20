@@ -140,13 +140,14 @@ class SettingsActivity : Activity() {
         group(listOf(
             switchRow("Hide Status Bar", prefs.hideStatusBar) { prefs.hideStatusBar = it; restartLauncher() },
             switchRow("Unlock Animation", prefs.unlockAnimation) { prefs.unlockAnimation = it },
-            switchRow("Close App into Icon Animation", prefs.closeToIcon) { prefs.closeToIcon = it },
+            switchRow("Close App into Icon (Experimental)", prefs.closeToIcon) { prefs.closeToIcon = it },
             switchRow("Parallax & Glass Tilt", prefs.parallax) { prefs.parallax = it },
             switchRow("Add New Apps to Home Screen", prefs.autoAddNewApps) { prefs.autoAddNewApps = it },
             row("Change Wallpaper") {
                 runCatching { startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Wallpaper")) }
             },
         ))
+        footer("Close App into Icon is experimental: on some phones it makes the next app open show the app's splash screen.")
         footer("Page 1 keeps its top row free for the battery, Wi-Fi and signal indicator. Long-press empty space to edit the Home Screen; swipe left past the last page for the App Library.")
 
         section("ABOUT")

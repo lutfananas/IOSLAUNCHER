@@ -81,10 +81,13 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("parallax", true)
         set(v) = sp.edit { putBoolean("parallax", v) }
 
-    /** Closing an app shrinks it back into its icon (off = plain return animation, like build 14). */
+    /**
+     * Closing an app shrinks it back into its icon. Off by default: drawing it while Android finishes its
+     * own close transition makes the next open of that app show its splash screen (confirmed on device).
+     */
     var closeToIcon: Boolean
-        get() = sp.getBoolean("close_to_icon", true)
-        set(v) = sp.edit { putBoolean("close_to_icon", v) }
+        get() = sp.getBoolean("close_to_icon_v2", false)
+        set(v) = sp.edit { putBoolean("close_to_icon_v2", v) }
 
     var autoAddNewApps: Boolean
         get() = sp.getBoolean("auto_add", true)
