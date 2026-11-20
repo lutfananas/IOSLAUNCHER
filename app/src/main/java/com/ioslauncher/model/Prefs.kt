@@ -35,6 +35,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("dock_enabled", true)
         set(v) = sp.edit { putBoolean("dock_enabled", v) }
 
+    /** Hide the dock on Home Screen page 1 only (it slides back in on the other pages). */
+    var hideDockOnFirstPage: Boolean
+        get() = sp.getBoolean("hide_dock_page1", false)
+        set(v) = sp.edit { putBoolean("hide_dock_page1", v) }
+
     var gridCols: Int
         get() = sp.getInt("grid_cols", 4).coerceIn(GRID_MIN, GRID_MAX)
         set(v) = sp.edit { putInt("grid_cols", v.coerceIn(GRID_MIN, GRID_MAX)) }

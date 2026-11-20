@@ -92,6 +92,7 @@ class SettingsActivity : Activity() {
         section("DOCK")
         group(listOf(
             switchRow("Show Dock", prefs.dockEnabled) { prefs.dockEnabled = it },
+            switchRow("Hide Dock on Page 1 Only", prefs.hideDockOnFirstPage) { prefs.hideDockOnFirstPage = it },
         ))
         footer("When the dock is off, its apps move onto the Home Screen and the grid uses the freed space. The dock glass shrinks to fit the number of apps in it.")
 

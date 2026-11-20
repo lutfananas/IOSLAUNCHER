@@ -57,6 +57,14 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override var isEditMode = false; private set
 
     private var libProgress = 0f
+    /** 1 on page 1 when "Hide Dock on Page 1" is on, fading to 0 as you swipe to page 2. */
+    private var firstPageHide = 0f
+
+    private fun dockHidden() = maxOf(libProgress, firstPageHide)
+    private fun dockTargetAlpha() = 1f - dockHidden()
+    private fun dockTargetTY() = dockHidden() * (dimens.dockHeight + dimens.dockBottom)
+    /** Whether the dock can currently take a dropped icon. */
+    val dockAvailable get() = built && dimens.dockEnabled && dockHidden() < 0.5f
     private var libraryBlur = 0f
     private var overlayBlur = 0f
     private var lastBlurRadius = -1
@@ -317,6 +325,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         indicator.count = homePages.size
         if (wasOnLibrary && countBefore != homePages.size) pager.snapTo(homePages.size, animate = false)
         indicator.position = pager.position
+        onPageScroll(pager.position)   // apply dock / indicator state for the current page
     }
 
     private fun reloadIcons() {
@@ -339,9 +348,12 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override fun onPageScroll(position: Float) {
         val lastHome = (homePages.size - 1).coerceAtLeast(0)
         libProgress = (position - lastHome).coerceIn(0f, 1f)
+        firstPageHide = if (launcher.prefs.hideDockOnFirstPage && homePages.size > 1) (1f - position).coerceIn(0f, 1f)
+            else if (launcher.prefs.hideDockOnFirstPage) 1f else 0f
         if (!unlockPrepared) {
-            dock.translationY = libProgress * (dimens.dockHeight + dimens.dockBottom)
-            dock.alpha = 1f - libProgress
+            dock.translationY = dockTargetTY()
+            dock.alpha = dockTargetAlpha()
+            dock.visibility = if (dimens.dockEnabled && dockTargetAlpha() > 0.01f) View.VISIBLE else if (dimens.dockEnabled) View.INVISIBLE else View.GONE
             bottomBar.forEach { it.alpha = 1f - libProgress }
         }
         // Don't let the invisible search button catch taps on the App Library.
@@ -682,11 +694,10 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             v.animate().alpha(1f).setDuration(260).start()
         }
         unlockViews.clear()
-        val dockTarget = libProgress * (dimens.dockHeight + dimens.dockBottom)
-        spring(dock, DynamicAnimation.TRANSLATION_Y, dockTarget)
+        spring(dock, DynamicAnimation.TRANSLATION_Y, dockTargetTY())
         spring(dock, DynamicAnimation.SCALE_X, 1f)
         spring(dock, DynamicAnimation.SCALE_Y, 1f)
-        dock.animate().alpha(1f - libProgress).setDuration(260).start()
+        dock.animate().alpha(dockTargetAlpha()).setDuration(260).start()
         bottomBar.forEach { it.animate().alpha(1f - libProgress).setStartDelay(180).setDuration(250).start() }
     }
 
@@ -696,8 +707,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         unlockPrepared = false
         for (v in unlockViews) { v.translationX = 0f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f; v.alpha = 1f }
         unlockViews.clear()
-        dock.translationY = libProgress * (dimens.dockHeight + dimens.dockBottom)
-        dock.scaleX = 1f; dock.scaleY = 1f; dock.alpha = 1f - libProgress
+        dock.translationY = dockTargetTY()
+        dock.scaleX = 1f; dock.scaleY = 1f; dock.alpha = dockTargetAlpha()
         bottomBar.forEach { it.alpha = 1f - libProgress }
     }
 

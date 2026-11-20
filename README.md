@@ -30,7 +30,7 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
   dari icon pack yang terinstal (dengan pencarian dan saran ikon yang cocok). Hasilnya dipotong ke bentuk ikon iOS.
   *Reset to Default Icon* mengembalikan ikon asli.
 - **Grid baris × kolom bisa diatur 3–8** (sampai 8×8). Ikon dan nama otomatis mengecil di grid yang padat.
-- **Dock bisa dimatikan.** Background kaca dock mengecil/membesar mengikuti jumlah ikon di dalamnya.
+- **Dock bisa dimatikan**, atau disembunyikan hanya di Page 1 (*Hide Dock on Page 1 Only*; dock muncul lagi saat digeser ke halaman 2). Background kaca dock mengecil/membesar mengikuti jumlah ikon di dalamnya.
 - **Tema Liquid Glass.** Dock, folder, kartu App Library, kolom pencarian, menu, alert, tombol, dan indikator halaman memakai
   kaca yang membiaskan wallpaper (refraksi + sedikit pemisahan warna di tepi, Android 13+), kilau di bagian atas, dan tepi
   spekular. Android 14+ hanya mengizinkan aplikasi membaca wallpaper dengan izin *All files access*

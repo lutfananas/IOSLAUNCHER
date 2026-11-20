@@ -128,7 +128,7 @@ class DragController(private val a: MainActivity) {
         val cx = g.x + g.width / 2f
         val cy = g.y + g.height / 2f
         val layout = a.layoutStore
-        val overDock = d.dockEnabled && cy > d.dockTop - d.pt(8f)
+        val overDock = a.dockAvailable && cy > d.dockTop - d.pt(8f)
         if (overDock) {
             setCandidate(null)
             if (isFolderDrag) { a.dock.phantomSlots = 0; return }
