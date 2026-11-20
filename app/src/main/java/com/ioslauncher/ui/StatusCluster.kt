@@ -207,8 +207,8 @@ class StatusClusterView(context: Context) : View(context) {
         val ox = (width - w) / 2f
         // Glyph bottom sits where an app icon's bottom would; the clock fills the space above it.
         val oy = iconTop + ref - w
-        clockPaint.textSize = ref * 0.27f
-        canvas.drawText(clockText(), width / 2f, oy - ref * 0.07f, clockPaint)
+        clockPaint.textSize = ref * 0.19f   // 70% of the previous 0.27
+        canvas.drawText(clockText(), width / 2f, oy - ref * 0.06f, clockPaint)
         canvas.save()
         canvas.translate(ox, oy)
         val cx = w / 2f; val cy = w / 2f
