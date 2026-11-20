@@ -559,12 +559,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override fun launchApp(view: View, app: AppInfo, iconBounds: Rect?) {
         val la = getSystemService(LauncherApps::class.java)
         val bounds = iconBounds ?: Rect(dimens.width / 2, dimens.height / 2, dimens.width / 2 + 1, dimens.height / 2 + 1)
-        // The real app window grows out of the icon (clip reveal) — its own content, no colour layer of ours
-        // in between — while the home screen zooms in and dims behind it, like iOS.
-        val opts = ActivityOptions.makeClipRevealAnimation(root, bounds.left, bounds.top, bounds.width(), bounds.height())
-        playHomeZoomForLaunch()
-        // Icon splash while the app starts, instead of an empty window that reads as a blink.
-        if (android.os.Build.VERSION.SDK_INT >= 33) opts.setSplashScreenStyle(android.window.SplashScreen.SPLASH_SCREEN_STYLE_ICON)
+        // App zooms up out of its icon (the user's preferred open animation).
+        val opts = ActivityOptions.makeScaleUpAnimation(root, bounds.left, bounds.top, bounds.width(), bounds.height())
         try {
             la.startMainActivity(app.component, app.user, bounds, opts.toBundle())
             launcher.prefs.recordLaunch(app.key)
@@ -984,19 +980,6 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     private var closeAnim: CloseToIconView? = null
     private var openCard: CloseToIconView? = null
     private var openHiddenIcon: View? = null
-
-    /** Home screen pushes towards the viewer and dims while the app opens over it. */
-    private fun playHomeZoomForLaunch() {
-        for (v in listOf<View>(pager, dock)) {
-            v.animate().cancel()
-            v.pivotX = dimens.width / 2f
-            v.pivotY = if (v === dock) -(dimens.dockTop - dimens.height / 2f) else dimens.height / 2f
-            v.animate().scaleX(1.12f).scaleY(1.12f).alpha(0.35f).setDuration(320)
-                .setInterpolator(android.view.animation.PathInterpolator(0.3f, 0f, 0.2f, 1f)).start()
-        }
-        // If the app doesn't come up, put the home screen back.
-        root.postDelayed({ if (resumed) resetHomeTransform() }, 1500)
-    }
 
     private fun resetHomeTransform() {
         for (v in listOf<View>(pager, dock)) { v.animate().cancel(); v.scaleX = 1f; v.scaleY = 1f }
