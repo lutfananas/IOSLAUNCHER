@@ -116,8 +116,8 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
             sv.iconTop = top
             sv.labelTextSize = d.labelTextSize
             sv.showLabel = LauncherApp.instance.prefs.showLabels
-            // Raised by half an icon above the first-row cell.
-            val lift = d.iconSize / 2
+            // Raised by a quarter icon above the first-row cell.
+            val lift = d.iconSize / 4
             sv.layout(o.x, o.y - lift, o.x + d.cellWidth, o.y + d.cellHeight - lift)
         }
         keys.forEachIndexed { index, key ->

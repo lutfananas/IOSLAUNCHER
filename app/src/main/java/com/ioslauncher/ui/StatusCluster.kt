@@ -157,6 +157,7 @@ class DeviceStatusMonitor(private val context: Context, private val onChange: (D
 class StatusClusterView(context: Context) : View(context) {
     var status = DeviceStatus()
         set(v) { field = v; contentDescription = describe(v); invalidate() }
+    /** Reference app-icon size; the glyph is drawn smaller than an icon with a digital clock above it. */
     var glyphSize = 0
     var showLabel = true
 
@@ -177,12 +178,37 @@ class StatusClusterView(context: Context) : View(context) {
 
     var iconTop = 0f
 
+    private val clockPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+        setShadowLayer(4f, 0f, 1f, Color.argb(76, 0, 0, 0))
+    }
+    private val tick = object : Runnable {
+        override fun run() {
+            invalidate()
+            postDelayed(this, 60_000L - System.currentTimeMillis() % 60_000L + 50L)
+        }
+    }
+
+    override fun onAttachedToWindow() { super.onAttachedToWindow(); removeCallbacks(tick); post(tick) }
+    override fun onDetachedFromWindow() { super.onDetachedFromWindow(); removeCallbacks(tick) }
+
+    private fun clockText(): String {
+        val pattern = if (android.text.format.DateFormat.is24HourFormat(context)) "HH:mm" else "h:mm"
+        return java.text.SimpleDateFormat(pattern, java.util.Locale.getDefault()).format(java.util.Date())
+    }
+
     init { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES }
 
     override fun onDraw(canvas: Canvas) {
-        val w = glyphSize.toFloat().takeIf { it > 0 } ?: minOf(width, height).toFloat()
+        val ref = glyphSize.toFloat().takeIf { it > 0 } ?: minOf(width, height).toFloat()
+        val w = ref * GLYPH_RATIO
         val ox = (width - w) / 2f
-        val oy = iconTop
+        // Glyph bottom sits where an app icon's bottom would; the clock fills the space above it.
+        val oy = iconTop + ref - w
+        clockPaint.textSize = ref * 0.27f
+        canvas.drawText(clockText(), width / 2f, oy - ref * 0.07f, clockPaint)
         canvas.save()
         canvas.translate(ox, oy)
         val cx = w / 2f; val cy = w / 2f
@@ -239,6 +265,8 @@ class StatusClusterView(context: Context) : View(context) {
             canvas.drawText(text, width / 2f, oy + w + labelPaint.textSize * 1.25f, labelPaint)
         }
     }
+
+    companion object { const val GLYPH_RATIO = 0.7f }
 
     private fun signalAlpha(e: SignalElementEmphasis) = when (e) {
         SignalElementEmphasis.DIM -> .3f
