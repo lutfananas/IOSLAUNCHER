@@ -36,6 +36,8 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
 - **Widget.** Di mode edit ketuk tombol **+** (kiri atas) untuk membuka galeri widget (semua widget terpasang, dengan
   pratinjau dan ukuran). Widget mengikuti grid ikon, sudutnya membulat seperti iOS, bisa diseret, diubah ukurannya per petak
   dengan pegangan kiri/kanan/bawah, diatur ulang (*Edit Widget*), atau dihapus.
+- **Folder di dock.** Folder bisa ditaruh di dock (satu slot, pratinjau 2×2 di atas ubin kaca); seret ikon ke atas ikon
+  dock untuk membuat folder langsung di dock.
 - **Grid baris × kolom bisa diatur 3–8** (sampai 8×8). Ikon dan nama otomatis mengecil di grid yang padat.
 - **Dock bisa dimatikan**, atau disembunyikan hanya di Page 1 (*Hide Dock on Page 1 Only*; Page 1 mendapat satu baris ikon tambahan di ruang dock, dan dock muncul lagi saat digeser ke halaman 2). Background kaca dock mengecil/membesar mengikuti jumlah ikon di dalamnya.
 - **Tema Liquid Glass.** Dock, folder, kartu App Library, kolom pencarian, menu, alert, tombol, dan indikator halaman memakai

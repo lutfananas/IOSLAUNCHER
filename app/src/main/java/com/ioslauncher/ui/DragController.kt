@@ -130,8 +130,14 @@ class DragController(private val a: MainActivity) {
         val layout = a.layoutStore
         val overDock = a.dockAvailable && cy > d.dockTop - d.pt(8f)
         if (overDock) {
+            val dragIsWidget = layout.isWidget(key)
+            if (dragIsWidget) { setCandidate(null); a.dock.phantomSlots = 0; return }
+            // App hovering over a dock icon/folder → make or fill a folder right in the dock.
+            if (!isFolderDrag) {
+                val over = a.dock.itemAtCenter(cx, d.dockIconSize * 0.36f)?.takeIf { it != key }
+                if (over != null) { setCandidate(over); return }
+            }
             setCandidate(null)
-            if (isFolderDrag) { a.dock.phantomSlots = 0; return }
             val cur = layout.dock.indexOf(key)
             if (cur < 0 && layout.dock.size >= LayoutStore.DOCK_MAX) return
             val slots = if (cur >= 0) layout.dock.size else layout.dock.size + 1

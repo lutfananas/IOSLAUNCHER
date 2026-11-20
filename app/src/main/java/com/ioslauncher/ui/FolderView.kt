@@ -37,6 +37,8 @@ import kotlin.random.Random
 @SuppressLint("ViewConstructor")
 class FolderView(context: Context, private val host: LauncherHost) : View(context), DragItem {
     var folder: Folder? = null; private set
+    /** In the dock: one icon-sized glass tile with a 2×2 preview, no label, no resize handles. */
+    var inDock = false
     var spanX = 1; private set
     var spanY = 1; private set
     private var apps: List<AppInfo> = emptyList()
@@ -89,6 +91,11 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
     /** Glass background rect in local coordinates: spans the icon areas of the covered cells. */
     private fun computeBg(): RectF {
         val d = d()
+        if (inDock) {
+            val s = d.dockIconSize.toFloat()
+            bg.set((width - s) / 2f, (height - s) / 2f, (width + s) / 2f, (height + s) / 2f)
+            return bg
+        }
         val left = (d.cellWidth - d.iconSize) / 2f
         val top = d.iconTopIn(page)
         val ch = d.cellH(page)
@@ -102,6 +109,11 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
 
     private fun grid(): Grid {
         val r = computeBg()
+        if (inDock) {
+            val pad = r.width() * 0.15f; val gap = r.width() * 0.09f
+            val size = (r.width() - 2 * pad - gap) / 2f
+            return Grid(2, 2, size, gap, r.left + pad, r.top + pad)
+        }
         if (spanX == 1 && spanY == 1) {
             val pad = r.width() * 0.13f; val gap = r.width() * 0.055f
             val size = (r.width() - 2 * pad - 2 * gap) / 3f
@@ -123,7 +135,7 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
         return RectF(l, t, l + g.size, t + g.size)
     }
 
-    private fun overflowing(g: Grid) = spanX * spanY > 1 && apps.size > g.cols * g.rows
+    private fun overflowing(g: Grid) = !inDock && spanX * spanY > 1 && apps.size > g.cols * g.rows
 
     private fun loadIcons() {
         val g = grid()
@@ -146,7 +158,8 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
         val f = folder ?: return
         if (host.isHiddenForDrag(f.id)) return
         val r = computeBg()
-        val radius = d().iconSize * IosShape.ICON_CORNER_RATIO * (if (spanX * spanY > 1) 1.25f else 1f)
+        val radius = if (inDock) d().dockIconSize * IosShape.ICON_CORNER_RATIO
+            else d().iconSize * IosShape.ICON_CORNER_RATIO * (if (spanX * spanY > 1) 1.25f else 1f)
         IosShape.roundRect(r, radius, path)
         Glass.draw(canvas, this, path, r, radius, Color.argb(if (dropHighlight) 60 else 30, 255, 255, 255), shadow = true)
 
@@ -168,7 +181,7 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
             }
         }
 
-        if (d().showLabels) {
+        if (d().showLabels && !inDock) {
             labelPaint.textSize = d().labelTextSize
             val text = TextUtils.ellipsize(f.name, labelPaint, r.width() + d().cellWidth - d().iconSize - 4f, TextUtils.TruncateAt.END)
             canvas.drawText(text, 0, text.length, r.centerX(), r.bottom + d().labelGap - labelPaint.ascent(), labelPaint)
@@ -180,7 +193,8 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
             canvas.drawCircle(r.left + br * 0.45f, r.top + br * 0.45f, br, badgePaint)
             badgePaint.color = Color.argb(255, 40, 40, 42); badgePaint.strokeWidth = br * 0.22f; badgePaint.strokeCap = Paint.Cap.ROUND
             canvas.drawLine(r.left - br * 0.0f, r.top + br * 0.45f, r.left + br * 0.9f, r.top + br * 0.45f, badgePaint)
-            // Resize handles (left, right, bottom).
+            // Resize handles (left, right, bottom) — not in the dock.
+            if (inDock) return
             handlePaint.color = Color.argb(235, 255, 255, 255)
             val hl = minOf(r.height() * 0.4f, d().iconSize * 0.45f); val hw = d().dp(5f)
             canvas.drawRoundRect(RectF(r.right - hw / 2, r.centerY() - hl / 2, r.right + hw / 2, r.centerY() + hl / 2), hw, hw, handlePaint)
@@ -223,6 +237,7 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
     }
 
     private fun edgeAt(x: Float, y: Float): Int {
+        if (inDock) return 0
         val r = computeBg(); val t = d().dp(22f)
         if (abs(x - r.right) < t && y in r.top..r.bottom) return 1
         if (abs(x - r.left) < t && y in r.top + d().iconSize * 0.3f..r.bottom) return -1
@@ -236,7 +251,7 @@ class FolderView(context: Context, private val host: LauncherHost) : View(contex
     }
 
     private fun slotAt(x: Float, y: Float): Int {
-        if (spanX * spanY == 1) return -1
+        if (inDock || spanX * spanY == 1) return -1
         val g = grid()
         val n = minOf(apps.size, g.cols * g.rows)
         for (i in 0 until n) if (slotRect(i, g).contains(x, y)) return if (overflowing(g) && i == n - 1) -1 else i

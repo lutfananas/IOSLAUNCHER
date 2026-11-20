@@ -429,6 +429,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         if (!unlockPrepared) {
             dock.translationY = dockTargetTY()
             dock.alpha = dockTargetAlpha()
+            if (dockHidden() > 0f && dockHidden() < 1f) Glass.invalidateTree(dock)   // dock folders' glass while sliding
             dock.visibility = if (dimens.dockEnabled && dockTargetAlpha() > 0.01f) View.VISIBLE else if (dimens.dockEnabled) View.INVISIBLE else View.GONE
             bottomBar.forEach { it.alpha = barAlpha(it) }
             // Page 1 grid uses the dock's space: the dots slide down into the bottom band.
@@ -794,14 +795,16 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         val f = view.folder ?: return
         if (isEditMode) return
         val cols = dimens.cols
-        val items = listOf(
-            MenuItem("Open Folder") { openFolder(f.id, view.dragBoundsOnScreen()) },
-            MenuItem("Small  ·  1 × 1") { onFolderResize(f.id, 1, 1, true) },
-            MenuItem("Medium  ·  2 × 2") { onFolderResize(f.id, minOf(2, cols), 2, true) },
-            MenuItem("Wide  ·  ${cols} × 2") { onFolderResize(f.id, cols, 2, true) },
-            MenuItem("Edit Home Screen") { enterEditMode() },
-            MenuItem("Remove Folder", destructive = true) { showRemoveFolderAlert(f) },
-        )
+        val items = buildList {
+            add(MenuItem("Open Folder") { openFolder(f.id, view.dragBoundsOnScreen()) })
+            if (!view.inDock) {
+                add(MenuItem("Small  ·  1 × 1") { onFolderResize(f.id, 1, 1, true) })
+                add(MenuItem("Medium  ·  2 × 2") { onFolderResize(f.id, minOf(2, cols), 2, true) })
+                add(MenuItem("Wide  ·  ${cols} × 2") { onFolderResize(f.id, cols, 2, true) })
+            }
+            add(MenuItem("Edit Home Screen") { enterEditMode() })
+            add(MenuItem("Remove Folder", destructive = true) { showRemoveFolderAlert(f) })
+        }
         showMenu(view.dragSnapshot(), view.dragBoundsOnScreen(), items)
     }
 

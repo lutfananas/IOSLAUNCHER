@@ -212,7 +212,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
  * (animated) to fit the remaining ones.
  */
 class DockView(context: Context, private val host: LauncherHost) : ViewGroup(context) {
-    private val views = LinkedHashMap<String, AppIconView>()
+    private val views = LinkedHashMap<String, View>()
     var keys: List<String> = emptyList(); private set
     private val previous = HashMap<String, Int>()
     private var animateNext = false
@@ -229,10 +229,11 @@ class DockView(context: Context, private val host: LauncherHost) : ViewGroup(con
         clipChildren = false
     }
 
-    val iconViews: Collection<AppIconView> get() = views.values
+    val iconViews: Collection<AppIconView> get() = views.values.filterIsInstance<AppIconView>()
 
     fun setItems(newKeys: List<String>, animate: Boolean) {
         val repo = LauncherApp.instance.repository
+        val layout = LauncherApp.instance.layout
         if (animate) {
             previous.clear()
             for ((k, v) in views) previous[k] = v.left + v.translationX.toInt()
@@ -243,8 +244,16 @@ class DockView(context: Context, private val host: LauncherHost) : ViewGroup(con
         while (it.hasNext()) { val e = it.next(); if (e.key !in keep) { removeView(e.value); it.remove() } }
         val shown = ArrayList<String>()
         for (k in newKeys) {
+            val folder = layout.folders[k]
+            if (folder != null) {
+                val fv = views.getOrPut(k) { FolderView(context, host).also { it.inDock = true; addView(it) } } as FolderView
+                fv.bind(folder, 1, 1)
+                fv.setEditMode(host.isEditMode)
+                shown += k
+                continue
+            }
             val app = repo.find(k) ?: continue
-            val v = views.getOrPut(k) { AppIconView(context, host, IconSource.DOCK).also { addView(it) } }
+            val v = views.getOrPut(k) { AppIconView(context, host, IconSource.DOCK).also { addView(it) } } as AppIconView
             v.showLabel = false
             v.bind(app)
             v.setEditMode(host.isEditMode)
@@ -255,9 +264,16 @@ class DockView(context: Context, private val host: LauncherHost) : ViewGroup(con
         if (animate) animateBg() else { bgWidth = targetBgWidth(); invalidate() }
     }
 
-    fun viewFor(key: String) = views[key]
-    fun setEditMode(edit: Boolean) = views.values.forEach { it.setEditMode(edit) }
-    fun reloadIcons() = views.values.forEach { it.reloadIcon() }
+    fun viewFor(key: String): View? = views[key]
+    fun setEditMode(edit: Boolean) = views.values.forEach { when (it) { is AppIconView -> it.setEditMode(edit); is FolderView -> it.setEditMode(edit) } }
+    fun reloadIcons() = views.values.forEach { if (it is AppIconView) it.reloadIcon() else it.invalidate() }
+
+    /** Dock item whose icon centre is within [radius] of x (for dropping an app onto it to make a folder). */
+    fun itemAtCenter(x: Float, radius: Float): String? {
+        val d = host.dimens
+        keys.forEachIndexed { i, k -> if (kotlin.math.abs(slotLeft(i, slotCount) + d.dockSlot / 2f - x) < radius) return k }
+        return null
+    }
 
     private val slotCount get() = keys.size + phantomSlots
 
@@ -305,8 +321,10 @@ class DockView(context: Context, private val host: LauncherHost) : ViewGroup(con
         val count = slotCount
         keys.forEachIndexed { index, key ->
             val v = views[key] ?: return@forEachIndexed
-            if (v.iconSize != d.dockIconSize) { v.iconSize = d.dockIconSize; v.reloadIcon() }
-            v.iconTop = top
+            if (v is AppIconView) {
+                if (v.iconSize != d.dockIconSize) { v.iconSize = d.dockIconSize; v.reloadIcon() }
+                v.iconTop = top
+            }
             val x = slotLeft(index, count)
             v.layout(x, 0, x + d.dockSlot, height)
             v.pivotX = d.dockSlot / 2f; v.pivotY = height / 2f

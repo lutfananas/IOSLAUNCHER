@@ -217,6 +217,16 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
 
     /** Turn [targetKey] (an app on a page) into a folder holding it and [draggedKey]. */
     fun createFolder(targetKey: String, draggedKey: String, name: String): Folder? {
+        val dockIdx = dock.indexOf(targetKey)
+        if (dockIdx >= 0) {
+            // Folder made right inside the dock.
+            detach(draggedKey)
+            val folder = Folder(FOLDER_PREFIX + UUID.randomUUID().toString(), name, mutableListOf(targetKey, draggedKey))
+            folders[folder.id] = folder
+            dock[dock.indexOf(targetKey)] = folder.id
+            positions.remove(draggedKey)
+            return folder
+        }
         val page = pages.indexOfFirst { targetKey in it }
         if (page < 0) return null
         detach(draggedKey)
@@ -241,6 +251,13 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
     fun removeFromFolder(folderId: String, appKey: String) {
         val f = folders[folderId] ?: return
         f.apps.remove(appKey)
+        val inDock = dock.indexOf(folderId)
+        if (inDock >= 0) {
+            // Out of a dock folder: next to it in the dock if there's room, else onto the Home Screen.
+            if (dock.size < DOCK_MAX) dock.add(inDock + 1, appKey) else appendToHome(appKey)
+            if (f.apps.isEmpty()) { dock.remove(folderId); folders.remove(folderId) }
+            normalize(); save(); return
+        }
         val page = pageOf(folderId).coerceAtLeast(0)
         if (pages.isEmpty()) pages += mutableListOf<String>()
         val list = pages[page]
@@ -258,8 +275,8 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
         if (!prefs.dockEnabled && dock.isNotEmpty()) {
             dock.forEach { pages.last().add(it) }; dock.clear(); changed = true
         }
-        // Folders never live in the dock.
-        dock.filter { isBlock(it) }.forEach { dock.remove(it); pages.last().add(it); changed = true }
+        // Folders may sit in the dock (one slot, 2×2 preview); widgets never do.
+        dock.filter { isWidget(it) }.forEach { dock.remove(it); pages.last().add(it); changed = true }
         if (!free && positions.isNotEmpty()) { positions.clear(); changed = true }
         var i = 0
         while (i < pages.size) {
