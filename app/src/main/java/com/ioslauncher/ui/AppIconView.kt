@@ -27,7 +27,19 @@ import kotlin.random.Random
 enum class IconSource { HOME, DOCK, LIBRARY, FOLDER }
 
 /** One app icon: squircle bitmap + label, iOS press-dim, long-press, jiggle and remove badge. */
-class AppIconView(context: Context, private val host: LauncherHost, val source: IconSource) : View(context) {
+class AppIconView(context: Context, private val host: LauncherHost, val source: IconSource) : View(context), DragItem {
+    override val itemKey: String? get() = app?.key
+    override fun dragBoundsOnScreen(): Rect = iconBoundsOnScreen()
+    override fun dragSnapshot(): Bitmap? = bitmap
+    private var dropHighlight = false
+    /** Grow slightly while another icon hovers to form a folder. */
+    fun setDropHighlight(on: Boolean) {
+        if (dropHighlight == on) return
+        dropHighlight = on
+        animate().scaleX(if (on) 1.12f else 1f).scaleY(if (on) 1.12f else 1f).setDuration(160).start()
+        invalidate()
+    }
+
     var app: AppInfo? = null; private set
     var bitmap: Bitmap? = null; private set
     var iconSize = if (source == IconSource.DOCK) host.dimens.dockIconSize else host.dimens.iconSize
@@ -105,6 +117,12 @@ class AppIconView(context: Context, private val host: LauncherHost, val source: 
         if (host.isHiddenForDrag(a.key)) return
         val left = (width - iconSize) / 2f
         val top = iconTop
+        if (dropHighlight) {
+            // Folder forming: a glass tile appears behind the icon.
+            val g = iconSize * 0.14f
+            Glass.drawRect(canvas, this, RectF(left - g, top - g, left + iconSize + g, top + iconSize + g),
+                (iconSize + 2 * g) * IosShape.ICON_CORNER_RATIO, android.graphics.Color.argb(50, 255, 255, 255), false)
+        }
         bitmap?.let { canvas.drawBitmap(it, null, RectF(left, top, left + iconSize, top + iconSize), bitmapPaint) }
         if (pressedDim) {
             canvas.save(); canvas.translate(left, top)

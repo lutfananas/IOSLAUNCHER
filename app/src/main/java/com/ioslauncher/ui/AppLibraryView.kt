@@ -89,6 +89,9 @@ class AppLibraryView(context: Context, private val host: LibraryHost) : FrameLay
                 out.bottom = d.pt(14f).toInt()
             }
         })
+        recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) = Glass.invalidateTree(rv)
+        })
         addView(recycler, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val lp = LayoutParams(LayoutParams.MATCH_PARENT, d.searchBarHeight).apply {
             topMargin = d.gridTop - d.pt(4f).toInt()
@@ -105,6 +108,9 @@ class AppLibraryView(context: Context, private val host: LibraryHost) : FrameLay
     }
 
     fun refreshIcons() = adapter.notifyDataSetChanged()
+
+    /** Glass cards sample the wallpaper by screen position — redraw them when they move. */
+    fun invalidateGlass() { Glass.invalidateTree(this) }
 
     fun scrollToTop() = recycler.scrollToPosition(0)
 
@@ -156,8 +162,7 @@ class SearchPill(context: Context, private val d: Dimens) : View(context) {
     init { isClickable = true }
 
     override fun onDraw(canvas: Canvas) {
-        IosShape.roundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), height * 0.32f, path)
-        canvas.drawPath(path, bg)
+        Glass.drawRect(canvas, this, RectF(0f, 0f, width.toFloat(), height.toFloat()), height / 2f, Color.argb(28, 255, 255, 255), false, path)
         tp.textSize = d.pt(17f)
         val tw = tp.measureText(text)
         val g = d.pt(15f)
@@ -265,8 +270,9 @@ class CategoryCardView(context: Context, private val host: AppLibraryView.Librar
 
     override fun onDraw(canvas: Canvas) {
         val cat = category ?: return
-        IosShape.roundRect(RectF(0f, 0f, width.toFloat(), height.toFloat()), width * 0.135f, path)
-        canvas.drawPath(path, bg)
+        val r = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        IosShape.roundRect(r, width * 0.135f, path)
+        Glass.draw(canvas, this, path, r, width * 0.135f, Color.argb(24, 255, 255, 255), shadow = false)
         val big = bigSize(); val small = smallSize()
         val bigApps = if (cluster()) cat.apps.take(3) else cat.apps.take(4)
         bigApps.forEachIndexed { i, app ->

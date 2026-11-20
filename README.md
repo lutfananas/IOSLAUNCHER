@@ -20,6 +20,16 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
   Diadaptasi dari [Duo Launcher](https://github.com/jakesgoodapps/DuoLauncher) (lisensi MIT, lihat `THIRD_PARTY_NOTICES.md`).
 - **Ukuran ikon bisa diatur, terpisah untuk Home Screen dan Dock** (50%–130% dari ukuran ikon iOS),
   plus opsi **Hide App Names** untuk menyembunyikan nama ikon. Ada di *Settings → Icon Size / Icons*.
+- **Folder.** Seret satu ikon ke atas ikon lain dan tahan sebentar untuk membuat folder (namanya otomatis sesuai
+  kategori, bisa diganti dengan mengetuk judul saat folder dibuka). Di mode edit, folder punya pegangan di sisi kiri/kanan
+  (lebar) dan bawah (tinggi) yang bisa ditarik per petak grid. Folder 1×1 menampilkan pratinjau 3×3; folder besar
+  menampilkan aplikasinya langsung dan bisa diketuk untuk membuka aplikasi. Ukuran cepat juga ada di menu tekan-lama folder.
+- **Grid baris × kolom bisa diatur 3–8** (sampai 8×8). Ikon dan nama otomatis mengecil di grid yang padat.
+- **Dock bisa dimatikan.** Background kaca dock mengecil/membesar mengikuti jumlah ikon di dalamnya.
+- **Tema Liquid Glass.** Dock, folder, kartu App Library, kolom pencarian, menu, alert, tombol, dan indikator halaman memakai
+  kaca yang membiaskan wallpaper (refraksi + sedikit pemisahan warna di tepi, Android 13+), kilau di bagian atas, dan tepi
+  spekular. Android 14+ hanya mengizinkan aplikasi membaca wallpaper dengan izin *All files access*
+  (*Settings → Allow Wallpaper Access*); tanpa izin itu kaca tampil sebagai frosted glass.
 - Mode edit (jiggle): tekan lama ruang kosong atau pilih *Edit Home Screen*; seret ikon untuk menyusun ulang, pindah halaman
   di tepi layar, atau masukkan ke dock (maks. 4). Tombol "−" menghapus dari Home Screen (app tetap ada di App Library).
 - Menu konteks gaya iOS saat ikon ditekan lama, swipe ke bawah untuk pencarian, swipe ke bawah dari pojok atas

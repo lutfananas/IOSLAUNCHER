@@ -30,6 +30,7 @@ import androidx.dynamicanimation.animation.DynamicAnimation
 import androidx.dynamicanimation.animation.SpringAnimation
 import com.ioslauncher.LauncherApp
 import com.ioslauncher.model.AppInfo
+import com.ioslauncher.model.Folder
 import com.ioslauncher.model.LayoutStore
 import kotlin.math.roundToInt
 
@@ -67,6 +68,11 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
 
     private val appsListener: (List<AppInfo>) -> Unit = { apps -> onAppsChanged(apps) }
     private val iconListener: () -> Unit = { reloadIcons() }
+    private val glassListener: () -> Unit = { if (built) Glass.invalidateTree(root) }
+    private val wallpaperColors = android.app.WallpaperManager.OnColorsChangedListener { _, _ ->
+        if (built) Glass.load(this, dimens.width, dimens.height)
+    }
+    private var storageAccess = false
     private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
         if (key != "layout" && key?.startsWith("launch_") != true) settingsDirty = true
     }
@@ -111,6 +117,9 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         launcher.repository.addListener(appsListener)
         launcher.icons.addChangeListener(iconListener)
         launcher.prefs.registerListener(prefsListener)
+        Glass.addListener(glassListener)
+        android.app.WallpaperManager.getInstance(this).addOnColorsChangedListener(wallpaperColors, android.os.Handler(mainLooper))
+        storageAccess = android.os.Environment.isExternalStorageManager()
 
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_USER_PRESENT)
@@ -132,6 +141,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         launcher.repository.removeListener(appsListener)
         launcher.icons.removeChangeListener(iconListener)
         launcher.prefs.unregisterListener(prefsListener)
+        Glass.removeListener(glassListener)
+        runCatching { android.app.WallpaperManager.getInstance(this).removeOnColorsChangedListener(wallpaperColors) }
         runCatching { unregisterReceiver(screenReceiver) }
     }
 
@@ -156,6 +167,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             recreate()
             return
         }
+        val access = android.os.Environment.isExternalStorageManager()
+        if (access != storageAccess) { storageAccess = access; Glass.load(this, dimens.width, dimens.height) }
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (pendingUnlock && !keyguard.isKeyguardLocked) {
             playUnlock()
@@ -225,11 +238,13 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         root.addView(indicator, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dimens.indicatorHeight, Gravity.BOTTOM).apply {
             bottomMargin = dimens.dockBottom + dimens.dockHeight
         })
+        Glass.load(this, width, height)
 
         dock = DockView(this, this)
-        root.addView(dock, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dimens.dockHeight, Gravity.BOTTOM).apply {
+        root.addView(dock, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dimens.dockHeight.coerceAtLeast(1), Gravity.BOTTOM).apply {
             bottomMargin = dimens.dockBottom
         })
+        if (!dimens.dockEnabled) dock.visibility = View.GONE
 
         doneButton = pillButton("Done") { exitEditMode() }
         settingsButton = pillButton("Settings") { startActivity(Intent(this, SettingsActivity::class.java)) }
@@ -252,7 +267,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, 600, false)
         gravity = Gravity.CENTER
         setPadding(dimens.pt(14f).roundToInt(), 0, dimens.pt(14f).roundToInt(), 0)
-        background = SquircleDrawable(Color.argb(80, 255, 255, 255), dimens.pt(15f))
+        background = GlassDrawable(dimens.pt(15f), Color.argb(40, 255, 255, 255))
         visibility = View.GONE
         setOnClickListener { onClick() }
     }
@@ -297,7 +312,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         library.refreshIcons()
     }
 
-    fun viewForKey(key: String?): AppIconView? {
+    fun viewForKey(key: String?): View? {
         key ?: return null
         homePages.forEach { p -> p.viewFor(key)?.let { return it } }
         return dock.viewFor(key)
@@ -316,6 +331,10 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             indicator.alpha = 1f - libProgress
         }
         indicator.position = position
+        // Glass on moving pages must re-sample the (static) wallpaper.
+        val lo = kotlin.math.floor(position).toInt(); val hi = kotlin.math.ceil(position).toInt()
+        for (i in lo..hi) homePages.getOrNull(i)?.folderViews?.forEach { it.invalidate() }
+        if (libProgress > 0f && libProgress < 1f) library.invalidateGlass()
         libraryBlur = libProgress
         updateBlur()
     }
@@ -417,8 +436,18 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override fun onIconLongPress(view: AppIconView) {
         val app = view.app ?: return
         if (isEditMode && (view.source == IconSource.HOME || view.source == IconSource.DOCK)) return
-        val items = when (view.source) {
-            IconSource.HOME, IconSource.DOCK -> listOf(
+        val inFolder = openFolderId?.let { id -> layoutStore.folders[id]?.takeIf { app.key in it.apps } }
+        val items = when {
+            view.source == IconSource.FOLDER && inFolder != null -> listOf(
+                MenuItem("Remove from Folder") {
+                    layoutStore.removeFromFolder(inFolder.id, app.key)
+                    overlays.filterIsInstance<FolderOverlay>().forEach { it.close() }
+                    applyLayout(true)
+                },
+                MenuItem("App Info") { appInfo(app) },
+                MenuItem("Delete App", destructive = true) { uninstall(app) },
+            )
+            view.source == IconSource.HOME || view.source == IconSource.DOCK -> listOf(
                 MenuItem("Edit Home Screen") { enterEditMode() },
                 MenuItem("App Info") { appInfo(app) },
                 MenuItem("Remove App", destructive = true) { showRemoveAlert(app) },
@@ -446,17 +475,86 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         addOverlay(MenuOverlay(this, this, bitmap, rect, items))
     }
 
-    override fun onIconDragStart(view: AppIconView, rawX: Float, rawY: Float) {
-        if (view.source != IconSource.HOME && view.source != IconSource.DOCK) return
+    override fun onIconDragStart(view: View, rawX: Float, rawY: Float) {
+        if (view is AppIconView && view.source != IconSource.HOME && view.source != IconSource.DOCK) return
+        if (view !is DragItem) return
         overlays.filterIsInstance<MenuOverlay>().forEach { removeOverlay(it) }
         setOverlayBlur(0f)
         if (!isEditMode) enterEditMode()
         drag.start(view, rawX, rawY)
     }
 
-    override fun onRemoveRequested(view: AppIconView) {
-        view.app?.let { showRemoveAlert(it) }
+    override fun onRemoveRequested(view: View) {
+        when (view) {
+            is AppIconView -> view.app?.let { showRemoveAlert(it) }
+            is FolderView -> view.folder?.let { showRemoveFolderAlert(it) }
+        }
     }
+
+    private fun showRemoveFolderAlert(f: Folder) {
+        addOverlay(AlertOverlay(this, this, "Remove “${f.name}”?",
+            "The apps in this folder will stay in your App Library.",
+            listOf(
+                AlertButton("Remove Folder", AlertButton.DESTRUCTIVE) { layoutStore.removeFromHome(f.id); applyLayout(true) },
+                AlertButton("Cancel", AlertButton.BOLD),
+            )))
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Folders
+    // ------------------------------------------------------------------------------------------
+
+    private var openFolderId: String? = null
+
+    /** iOS names a new folder after the apps' category. */
+    fun folderNameFor(targetKey: String, draggedKey: String): String {
+        val repo = launcher.repository
+        val c1 = repo.find(targetKey)?.category
+        val c2 = repo.find(draggedKey)?.category
+        val c = c1 ?: c2
+        return if (c == null || c == com.ioslauncher.model.Categories.OTHER) "Folder" else c
+    }
+
+    override fun openFolder(folderId: String, from: Rect) {
+        val f = layoutStore.folders[folderId] ?: return
+        if (isEditMode && drag.dragging) return
+        openFolderId = folderId
+        addOverlay(FolderOverlay(this, this, f, from))
+    }
+
+    override fun renameFolder(folderId: String, name: String) {
+        val f = layoutStore.folders[folderId] ?: return
+        val n = name.trim().ifEmpty { "Folder" }
+        if (n != f.name) { f.name = n; layoutStore.save(); applyLayout(false) }
+    }
+
+    override fun onFolderClosed(folderId: String) { if (openFolderId == folderId) openFolderId = null }
+
+    override fun onFolderLongPress(view: FolderView) {
+        val f = view.folder ?: return
+        if (isEditMode) return
+        val cols = dimens.cols
+        val items = listOf(
+            MenuItem("Open Folder") { openFolder(f.id, view.dragBoundsOnScreen()) },
+            MenuItem("Small  ·  1 × 1") { onFolderResize(f.id, 1, 1, true) },
+            MenuItem("Medium  ·  2 × 2") { onFolderResize(f.id, minOf(2, cols), 2, true) },
+            MenuItem("Wide  ·  ${cols} × 2") { onFolderResize(f.id, cols, 2, true) },
+            MenuItem("Edit Home Screen") { enterEditMode() },
+            MenuItem("Remove Folder", destructive = true) { showRemoveFolderAlert(f) },
+        )
+        showMenu(view.dragSnapshot(), view.dragBoundsOnScreen(), items)
+    }
+
+    override fun onFolderResize(folderId: String, spanX: Int, spanY: Int, done: Boolean) {
+        val f = layoutStore.folders[folderId] ?: return
+        f.spanX = spanX.coerceIn(1, dimens.cols)
+        f.spanY = spanY.coerceIn(1, dimens.rows)
+        layoutStore.normalize(removeEmpty = done)
+        if (done) layoutStore.save()
+        applyLayout(true)
+    }
+
+    override fun isFolderDropTarget(key: String) = layoutStore.isFolder(key)
 
     override fun isHiddenForDrag(key: String) = drag.dragKey == key
 
@@ -519,7 +617,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         val page = pager.currentPage
         if (page >= homePages.size) return listOf(library)
         val pv = homePages[page]
-        return buildList { pv.statusView?.let { add(it) }; addAll(pv.iconViews) }
+        return buildList { pv.statusView?.let { add(it) }; addAll(pv.itemViews) }
     }
 
     /** Called while the screen is off: put icons in their "outside the screen, zoomed" start state. */

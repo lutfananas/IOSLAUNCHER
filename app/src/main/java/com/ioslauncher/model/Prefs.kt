@@ -4,6 +4,8 @@ import android.content.Context
 import androidx.core.content.edit
 
 class Prefs(context: Context) {
+    companion object { const val GRID_MIN = 3; const val GRID_MAX = 8 }
+
     private val sp = context.getSharedPreferences("launcher", Context.MODE_PRIVATE)
 
     var iconPack: String
@@ -28,6 +30,23 @@ class Prefs(context: Context) {
     var dockIconScale: Float
         get() = sp.getFloat("dock_icon_scale", 1f)
         set(v) = sp.edit { putFloat("dock_icon_scale", v) }
+
+    var dockEnabled: Boolean
+        get() = sp.getBoolean("dock_enabled", true)
+        set(v) = sp.edit { putBoolean("dock_enabled", v) }
+
+    var gridCols: Int
+        get() = sp.getInt("grid_cols", 4).coerceIn(GRID_MIN, GRID_MAX)
+        set(v) = sp.edit { putInt("grid_cols", v.coerceIn(GRID_MIN, GRID_MAX)) }
+
+    var gridRows: Int
+        get() = sp.getInt("grid_rows", 6).coerceIn(GRID_MIN, GRID_MAX)
+        set(v) = sp.edit { putInt("grid_rows", v.coerceIn(GRID_MIN, GRID_MAX)) }
+
+    /** Liquid Glass: refraction + specular rim on glass surfaces. */
+    var liquidGlass: Boolean
+        get() = sp.getBoolean("liquid_glass", true)
+        set(v) = sp.edit { putBoolean("liquid_glass", v) }
 
     var autoAddNewApps: Boolean
         get() = sp.getBoolean("auto_add", true)

@@ -81,6 +81,32 @@ class SettingsActivity : Activity() {
         footer(if (packs.isEmpty()) "No icon packs installed. Install any ADW / Nova / Apex compatible icon pack from the Play Store and it will show up here."
         else "Icons from the pack are drawn into the exact iOS app icon shape. Apps the pack doesn't cover use the pack's own mask, or the system icon.")
 
+        section("HOME SCREEN GRID")
+        group(listOf(
+            stepperRow("Columns", prefs.gridCols) { prefs.gridCols = it },
+            stepperRow("Rows", prefs.gridRows) { prefs.gridRows = it },
+        ))
+        footer("Up to 8 × 8. Icons and names shrink automatically on dense grids. Page 1 keeps its top row for the clock and status.")
+
+        section("DOCK")
+        group(listOf(
+            switchRow("Show Dock", prefs.dockEnabled) { prefs.dockEnabled = it },
+        ))
+        footer("When the dock is off, its apps move onto the Home Screen and the grid uses the freed space. The dock glass shrinks to fit the number of apps in it.")
+
+        section("LIQUID GLASS")
+        val wallpaperOk = android.os.Environment.isExternalStorageManager()
+        group(listOf(
+            switchRow("Liquid Glass Refraction", prefs.liquidGlass) { prefs.liquidGlass = it },
+            row(if (wallpaperOk) "Wallpaper Access: On" else "Allow Wallpaper Access", accent = !wallpaperOk) {
+                runCatching {
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        android.net.Uri.fromParts("package", packageName, null)))
+                }
+            },
+        ))
+        footer("Glass surfaces (dock, folders, App Library, menus) bend and blur the wallpaper like iOS. Android 14+ only lets an app read the wallpaper with “All files access”; without it, glass falls back to a frosted look. Live wallpapers always use the frosted look.")
+
         section("ICON SIZE")
         group(listOf(
             sliderRow("Home Screen", prefs.homeIconScale) { prefs.homeIconScale = it },
@@ -207,6 +233,37 @@ class SettingsActivity : Activity() {
         val sw = Switch(this).apply { isChecked = value; setOnCheckedChangeListener { _, c -> onChange(c) } }
         r.addView(sw)
         r.setOnClickListener { sw.toggle() }
+        return r
+    }
+
+    /** "Label    −  4  +" stepper for grid size. */
+    private fun stepperRow(title: String, value: Int, onChange: (Int) -> Unit): View {
+        val r = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = (48 * dp).toInt()
+            setPadding((16 * dp).toInt(), 0, (12 * dp).toInt(), 0)
+        }
+        r.addView(TextView(this).apply {
+            text = title; setTextColor(getColor(R.color.settings_text)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        var current = value
+        val num = TextView(this).apply {
+            text = "$current"; gravity = Gravity.CENTER; setTextColor(getColor(R.color.settings_text))
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f); typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+        }
+        fun btn(label: String, delta: Int) = TextView(this).apply {
+            text = label; gravity = Gravity.CENTER
+            setTextColor(Color.rgb(0, 122, 255)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+            background = SquircleDrawable(Color.argb(30, 120, 120, 128), 8 * dp)
+            setOnClickListener {
+                val n = (current + delta).coerceIn(com.ioslauncher.model.Prefs.GRID_MIN, com.ioslauncher.model.Prefs.GRID_MAX)
+                if (n != current) { current = n; num.text = "$n"; onChange(n) }
+            }
+        }
+        val size = (36 * dp).toInt()
+        r.addView(btn("−", -1), LinearLayout.LayoutParams(size, size))
+        r.addView(num, LinearLayout.LayoutParams((40 * dp).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
+        r.addView(btn("+", 1), LinearLayout.LayoutParams(size, size))
         return r
     }
 

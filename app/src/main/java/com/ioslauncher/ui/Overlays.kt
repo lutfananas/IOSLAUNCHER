@@ -61,6 +61,8 @@ abstract class Overlay(context: Context, protected val host: OverlayHost) : Fram
     interface OverlayHost : AppLibraryView.LibraryHost {
         fun setOverlayBlur(fraction: Float)
         fun removeOverlay(overlay: Overlay)
+        fun renameFolder(folderId: String, name: String) {}
+        fun onFolderClosed(folderId: String) {}
     }
 
     var closing = false; private set
@@ -107,9 +109,7 @@ class MenuOverlay(
     init {
         addView(iconView, LayoutParams(iconRect.width(), iconRect.height()).apply { leftMargin = iconRect.left; topMargin = iconRect.top })
         panel.orientation = LinearLayout.VERTICAL
-        panel.background = SquircleDrawable(context.getColor(R.color.menu_bg), d.pt(14f))
-        panel.clipToOutline = true
-        panel.elevation = d.dp(12f)
+        panel.background = GlassDrawable(d.pt(18f), context.getColor(R.color.menu_bg), shadow = true)
         items.forEachIndexed { i, item ->
             if (i > 0) panel.addView(View(context).apply { setBackgroundColor(context.getColor(R.color.menu_separator)) },
                 LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
@@ -173,8 +173,7 @@ class AlertOverlay(context: Context, host: OverlayHost, title: String, message: 
     init {
         val d = host.dimens
         card.orientation = LinearLayout.VERTICAL
-        card.background = SquircleDrawable(context.getColor(R.color.menu_bg), d.pt(14f))
-        card.clipToOutline = true
+        card.background = GlassDrawable(d.pt(22f), context.getColor(R.color.menu_bg), shadow = true)
         val textColor = context.getColor(R.color.menu_text)
         card.addView(TextView(context).apply {
             text = title; gravity = Gravity.CENTER; setTextColor(textColor)
@@ -232,7 +231,7 @@ class CategoryOverlay(context: Context, host: OverlayHost, category: LibraryCate
         title.gravity = Gravity.CENTER
         addView(title, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = d.gridTop })
 
-        panel.background = SquircleDrawable(Color.argb(70, 255, 255, 255), d.pt(38f))
+        panel.background = GlassDrawable(d.pt(38f), Color.argb(30, 255, 255, 255))
         val rv = RecyclerView(context)
         rv.layoutManager = GridLayoutManager(context, 4)
         rv.overScrollMode = OVER_SCROLL_NEVER
@@ -302,7 +301,7 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
     init {
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val bar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val fieldBox = FrameLayout(context).apply { background = SquircleDrawable(Color.argb(70, 255, 255, 255), d.searchBarHeight * 0.32f) }
+        val fieldBox = FrameLayout(context).apply { background = GlassDrawable(d.searchBarHeight / 2f, Color.argb(30, 255, 255, 255)) }
         val glyph = object : View(context) {
             val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(200, 255, 255, 255); style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
             override fun onDraw(canvas: Canvas) = SearchPill.drawMagnifier(canvas, width / 2f, height / 2f, d.pt(15f), p)
@@ -527,3 +526,95 @@ class AlphabetIndex(context: Context) : View(context) {
     }
 }
 
+
+
+// ---------------------------------------------------------------------------------------------------
+// Open folder: Liquid Glass panel, editable title, 3-column grid
+// ---------------------------------------------------------------------------------------------------
+
+@SuppressLint("ViewConstructor")
+class FolderOverlay(context: Context, host: OverlayHost, private val folder: com.ioslauncher.model.Folder, private val from: Rect) :
+    Overlay(context, host) {
+    override val scrimColor = Color.argb(60, 0, 0, 0)
+    private val panel = FrameLayout(context)
+    private val title = EditText(context)
+
+    init {
+        val d = host.dimens
+        title.setText(folder.name)
+        title.setTextColor(Color.WHITE)
+        title.typeface = Typeface.create(Typeface.DEFAULT, 700, false)
+        title.setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(30f))
+        title.gravity = Gravity.CENTER
+        title.background = null
+        title.isSingleLine = true
+        title.imeOptions = EditorInfo.IME_ACTION_DONE
+        title.setShadowLayer(6f, 0f, 1f, Color.argb(60, 0, 0, 0))
+        title.setOnEditorActionListener { v, _, _ ->
+            host.renameFolder(folder.id, v.text.toString()); v.clearFocus()
+            v.windowInsetsController?.hide(WindowInsets.Type.ime()); true
+        }
+        val panelW = d.width - 2 * d.pt(34f).toInt()
+        addView(title, LayoutParams(panelW, LayoutParams.WRAP_CONTENT, Gravity.CENTER_HORIZONTAL).apply { topMargin = d.gridTop + d.pt(40f).toInt() })
+
+        panel.background = GlassDrawable(d.pt(40f), Color.argb(34, 255, 255, 255), shadow = true)
+        val cols = 3
+        val pad = d.pt(18f).toInt()
+        val cellW = (panelW - 2 * pad) / cols
+        val icon = minOf(d.pt(60f) * LauncherApp.instance.prefs.homeIconScale, cellW * 0.72f).toInt()
+        val cellH = icon + d.pt(34f).toInt()
+        val repo = LauncherApp.instance.repository
+        val apps = folder.apps.mapNotNull { repo.find(it) }
+        val rv = RecyclerView(context)
+        rv.layoutManager = GridLayoutManager(context, cols)
+        rv.overScrollMode = OVER_SCROLL_NEVER
+        rv.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun getItemCount() = apps.size
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val v = AppIconView(context, host, IconSource.FOLDER)
+                v.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, cellH)
+                v.iconSize = icon
+                v.iconTop = d.pt(6f)
+                v.showLabel = true
+                return object : RecyclerView.ViewHolder(v) {}
+            }
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                (holder.itemView as AppIconView).bind(apps[position])
+            }
+        }
+        rv.setPadding(pad, pad, pad, pad)
+        rv.clipToPadding = false
+        rv.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(recyclerView: RecyclerView, dx: Int, dy: Int) = panel.invalidate()
+        })
+        panel.addView(rv, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        val rows = ((apps.size + cols - 1) / cols).coerceAtLeast(1)
+        val maxH = d.height - d.gridTop - d.pt(150f).toInt() - d.bottomInset
+        val h = (rows * cellH + 2 * pad).coerceAtMost(maxH)
+        addView(panel, LayoutParams(panelW, h, Gravity.CENTER_HORIZONTAL).apply { topMargin = d.gridTop + d.pt(100f).toInt() })
+        panel.isClickable = true
+        setOnClickListener { close() }
+    }
+
+    override fun show() {
+        super.show()
+        post {
+            val loc = IntArray(2); panel.getLocationOnScreen(loc)
+            panel.pivotX = (from.centerX() - loc[0]).toFloat()
+            panel.pivotY = (from.centerY() - loc[1]).toFloat()
+            panel.scaleX = 0.2f; panel.scaleY = 0.2f; panel.alpha = 0f
+            panel.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(380).setInterpolator(HomePageView.EASE)
+                .setUpdateListener { Glass.invalidateTree(panel) }.start()
+        }
+        title.alpha = 0f
+        title.animate().alpha(1f).setDuration(300).start()
+    }
+
+    override fun close(after: (() -> Unit)?) {
+        host.renameFolder(folder.id, title.text.toString())
+        title.windowInsetsController?.hide(WindowInsets.Type.ime())
+        host.onFolderClosed(folder.id)
+        panel.animate().scaleX(0.25f).scaleY(0.25f).alpha(0f).setDuration(220).start()
+        super.close(after)
+    }
+}

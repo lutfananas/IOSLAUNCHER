@@ -4,7 +4,7 @@
     <color name="settings_text">#FFFFFF</color>
     <color name="settings_secondary">#8D8D93</color>
     <color name="settings_separator">#38383A</color>
-    <color name="menu_bg">#E6252527</color>
+    <color name="menu_bg">#80202022</color>
     <color name="menu_text">#FFFFFF</color>
     <color name="menu_separator">#33FFFFFF</color>
     <bool name="light_bars">false</bool>
