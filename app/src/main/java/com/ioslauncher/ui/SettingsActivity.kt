@@ -115,6 +115,12 @@ class SettingsActivity : Activity() {
                 }
             },
         ))
+        footer(when (Glass.status) {
+            Glass.Status.REAL -> "● Glass is sampling your wallpaper: Blur and Refraction are active."
+            Glass.Status.NO_ACCESS -> "● Glass can't read the wallpaper yet, so it uses frosted glass (Blur sets how frosted). Tap “Allow Wallpaper Access” for real blur and refraction."
+            Glass.Status.LIVE_WALLPAPER -> "● A live wallpaper is set: Android doesn't expose it as an image, so glass is frosted (Blur sets how frosted). Use a static wallpaper for real blur and refraction."
+            Glass.Status.UNKNOWN -> "● Open the Home Screen once to detect the wallpaper."
+        })
         footer("Glass surfaces (dock, folders, App Library, menus) bend and blur the wallpaper like iOS. Android 14+ only lets an app read the wallpaper with “All files access”; without it, glass falls back to a frosted look. Live wallpapers always use the frosted look.")
 
         section("ICON SIZE")

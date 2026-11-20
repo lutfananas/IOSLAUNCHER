@@ -46,6 +46,12 @@ object Glass {
     private val worker = Executors.newSingleThreadExecutor()
 
     @Volatile private var blurred: Bitmap? = null
+
+    /** Where glass gets its look from — shown in Settings so it's clear why blur does or doesn't apply. */
+    enum class Status { UNKNOWN, REAL, NO_ACCESS, LIVE_WALLPAPER }
+    @Volatile var status = Status.UNKNOWN; private set
+    @Volatile private var fallbackTint = Color.rgb(120, 130, 160)
+    @Volatile private var fallbackTint2 = Color.rgb(90, 100, 140)
     private var bitmapShader: BitmapShader? = null
     private var runtimeShader: Any? = null      // RuntimeShader on API 33+
     private var shaderFailed = false
@@ -80,6 +86,8 @@ object Glass {
         blurAmt = p.glassBlur; refractAmt = p.glassRefraction; frostAmt = p.glassFrost; shineAmt = p.glassShine
     }
 
+    private fun mix(a: Int, b: Int, t: Float) = (a + (b - a) * t).toInt().coerceIn(0, 255)
+
     private fun scaleAlpha(c: Int, k: Float) = Color.argb((Color.alpha(c) * k).toInt().coerceIn(0, 255), Color.red(c), Color.green(c), Color.blue(c))
 
     fun load(context: Context, screenW: Int, screenH: Int) {
@@ -100,8 +108,14 @@ object Glass {
     @SuppressLint("MissingPermission")
     private fun buildBlurred(context: Context, screenW: Int, screenH: Int): Bitmap? {
         val wm = WallpaperManager.getInstance(context)
-        if (wm.wallpaperInfo != null) return null                      // live wallpaper: no static image
-        val d: Drawable = runCatching { wm.drawable }.getOrNull() ?: return null
+        // Wallpaper tint for the frosted fallback (colours are readable without any permission).
+        runCatching { wm.getWallpaperColors(WallpaperManager.FLAG_SYSTEM) }.getOrNull()?.let { wc ->
+            fallbackTint = wc.primaryColor.toArgb()
+            fallbackTint2 = (wc.secondaryColor ?: wc.primaryColor).toArgb()
+        }
+        if (wm.wallpaperInfo != null) { status = Status.LIVE_WALLPAPER; return null }   // live wallpaper: no static image
+        val d: Drawable = runCatching { wm.drawable }.getOrNull() ?: run { status = Status.NO_ACCESS; return null }
+        status = Status.REAL
         val w = max(1, screenW / DOWNSCALE); val h = max(1, screenH / DOWNSCALE)
         val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
@@ -195,10 +209,21 @@ object Glass {
             fill.shader = null
             bs.setLocalMatrix(shaderMatrix)
         } else {
-            // Frosted fallback without wallpaper access.
-            fill.shader = null
-            fill.color = Color.argb((46 * frostAmt.coerceAtLeast(0.3f)).toInt().coerceIn(0, 255), 255, 255, 255)
+            // Frosted fallback (wallpaper not readable): a milky glass tinted with the wallpaper's own colours.
+            // The Blur slider controls how frosted/opaque it is, so it still has a visible effect here.
+            val frost = (0.35f + 0.65f * (blurAmt / 2f).coerceIn(0f, 1f))
+            if (shadow) {
+                shadowPaint.color = Color.argb(20, 0, 0, 0)
+                shadowPaint.setShadowLayer(14 * dm, 0f, 4 * dm, Color.argb(40, 0, 0, 0))
+                canvas.drawPath(path, shadowPaint)
+            }
+            val a1 = (150 * frost).toInt(); val a2 = (110 * frost).toInt()
+            fill.shader = LinearGradient(rect.left, rect.top, rect.right, rect.bottom,
+                Color.argb(a1, mix(Color.red(fallbackTint), 255, 0.45f), mix(Color.green(fallbackTint), 255, 0.45f), mix(Color.blue(fallbackTint), 255, 0.45f)),
+                Color.argb(a2, mix(Color.red(fallbackTint2), 255, 0.3f), mix(Color.green(fallbackTint2), 255, 0.3f), mix(Color.blue(fallbackTint2), 255, 0.3f)),
+                Shader.TileMode.CLAMP)
             canvas.drawPath(path, fill)
+            fill.shader = null
         }
         tintPaint.color = scaleAlpha(tint, frostAmt)
         canvas.drawPath(path, tintPaint)
