@@ -54,6 +54,18 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         if (v === searchButton && dimens.dockEnabled) firstPageHide * (1f - libProgress) else 1f - libProgress
     private lateinit var doneButton: TextView
     private lateinit var settingsButton: TextView
+    private lateinit var addWidgetButton: TextView
+    private val editButtons get() = listOf(doneButton, settingsButton, addWidgetButton)
+
+    // ---- Widgets ----
+    private val widgetManager by lazy { android.appwidget.AppWidgetManager.getInstance(this) }
+    private val widgetHost by lazy { android.appwidget.AppWidgetHost(applicationContext, WIDGET_HOST_ID) }
+    private var pendingWidget: Pair<Int, android.appwidget.AppWidgetProviderInfo>? = null
+    private val bindWidget = registerForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        val p = pendingWidget ?: return@registerForActivityResult
+        if (r.resultCode == RESULT_OK) configureOrPlaceWidget(p.first, p.second)
+        else { widgetHost.deleteAppWidgetId(p.first); pendingWidget = null }
+    }
     private val overlays = mutableListOf<Overlay>()
     private var built = false
 
@@ -183,11 +195,13 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override fun onStart() {
         super.onStart()
         statusMonitor.start()
+        runCatching { widgetHost.startListening() }
     }
 
     override fun onStop() {
         super.onStop()
         statusMonitor.stop()
+        runCatching { widgetHost.stopListening() }
     }
 
     override fun onResume() {
@@ -298,15 +312,26 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
 
         doneButton = pillButton("Done") { exitEditMode() }
         settingsButton = pillButton("Settings") { startActivity(Intent(this, SettingsActivity::class.java)) }
+        addWidgetButton = pillButton("+") { openWidgetPicker() }.apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, dimens.pt(22f)); setPadding(0, 0, 0, dimens.pt(2f).roundToInt())
+            contentDescription = "Add Widget"
+        }
         val pillTop = (dimens.gridTop - dimens.pt(34f)).roundToInt().coerceAtLeast(dimens.pt(8f).roundToInt())
-        root.addView(doneButton, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dimens.pt(30f).roundToInt(), Gravity.END).apply {
-            topMargin = pillTop; rightMargin = dimens.pt(16f).roundToInt()
+        val pillH = dimens.pt(30f).roundToInt()
+        // Aligned with the outer edges of the first / last icon column.
+        val edge = dimens.sidePadding + (dimens.cellWidth - dimens.iconSize) / 2
+        root.addView(doneButton, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, pillH, Gravity.END).apply {
+            topMargin = pillTop; rightMargin = edge
         })
-        root.addView(settingsButton, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, dimens.pt(30f).roundToInt(), Gravity.START).apply {
-            topMargin = pillTop; leftMargin = dimens.pt(16f).roundToInt()
+        val leftGroup = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.HORIZONTAL }
+        leftGroup.addView(settingsButton, android.widget.LinearLayout.LayoutParams(android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, pillH))
+        leftGroup.addView(addWidgetButton, android.widget.LinearLayout.LayoutParams(pillH, pillH).apply { leftMargin = dimens.pt(8f).roundToInt() })
+        root.addView(leftGroup, FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, pillH, Gravity.START).apply {
+            topMargin = pillTop; leftMargin = edge
         })
 
         built = true
+        cleanupWidgetIds()
         if (launcher.repository.loaded) onAppsChanged(launcher.repository.apps)
     }
 
@@ -324,6 +349,11 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
 
     private fun onAppsChanged(apps: List<AppInfo>) {
         if (!built) return
+        // Widgets whose provider was uninstalled disappear with it.
+        layoutStore.widgets.keys.toList().forEach { k ->
+            val id = widgetId(k) ?: return@forEach
+            if (widgetManager.getAppWidgetInfo(id) == null) { runCatching { widgetHost.deleteAppWidgetId(id) }; layoutStore.removeFromHome(k) }
+        }
         layoutStore.sync(apps)
         applyLayout(false)
         library.setApps(apps)
@@ -454,7 +484,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         isEditMode = true
         homePages.forEach { it.setEditMode(true) }
         dock.setEditMode(true)
-        listOf(doneButton, settingsButton).forEach {
+        editButtons.forEach {
             it.visibility = View.VISIBLE; it.alpha = 0f; it.animate().alpha(1f).setDuration(200).start()
         }
         homePages.firstOrNull()?.statusView?.animate()?.alpha(0f)?.setDuration(200)?.start()
@@ -465,7 +495,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         isEditMode = false
         homePages.forEach { it.setEditMode(false) }
         dock.setEditMode(false)
-        listOf(doneButton, settingsButton).forEach { b ->
+        editButtons.forEach { b ->
             b.animate().alpha(0f).setDuration(200).withEndAction { b.visibility = View.GONE }.start()
         }
         homePages.firstOrNull()?.statusView?.animate()?.alpha(1f)?.setDuration(200)?.start()
@@ -550,6 +580,122 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         when (view) {
             is AppIconView -> view.app?.let { showRemoveAlert(it) }
             is FolderView -> view.folder?.let { showRemoveFolderAlert(it) }
+            is WidgetCell -> showRemoveWidgetAlert(view.key)
+        }
+    }
+
+    // ------------------------------------------------------------------------------------------
+    // Widgets
+    // ------------------------------------------------------------------------------------------
+
+    private fun widgetId(key: String) = key.removePrefix(LayoutStore.WIDGET_PREFIX).toIntOrNull()
+
+    override fun createWidgetView(key: String): View? {
+        val id = widgetId(key) ?: return null
+        val info = widgetManager.getAppWidgetInfo(id) ?: return null
+        val hv = runCatching { widgetHost.createView(this, id, info) }.getOrNull() ?: return null
+        return WidgetCell(this, this, key, hv)
+    }
+
+    /** Grid cells a widget wants: Android 12+ target cells, else its minimum size in our cells. */
+    private fun spanFor(info: android.appwidget.AppWidgetProviderInfo): Pair<Int, Int> {
+        val sx = if (info.targetCellWidth > 0) info.targetCellWidth
+            else kotlin.math.ceil(info.minWidth / dimens.cellWidth.toFloat()).toInt()
+        val sy = if (info.targetCellHeight > 0) info.targetCellHeight
+            else kotlin.math.ceil(info.minHeight / dimens.cellHeight.toFloat()).toInt()
+        return sx.coerceIn(1, dimens.cols) to sy.coerceIn(1, dimens.rows - 1)
+    }
+
+    private fun openWidgetPicker() {
+        val providers = runCatching { widgetManager.getInstalledProvidersForProfile(android.os.Process.myUserHandle()) }
+            .getOrDefault(emptyList())
+            .filter { it.widgetCategory and android.appwidget.AppWidgetProviderInfo.WIDGET_CATEGORY_HOME_SCREEN != 0 }
+        addOverlay(WidgetPickerOverlay(this, this, providers, ::spanFor) { info -> addWidget(info) })
+    }
+
+    private fun addWidget(info: android.appwidget.AppWidgetProviderInfo) {
+        val id = widgetHost.allocateAppWidgetId()
+        pendingWidget = id to info
+        val allowed = runCatching { widgetManager.bindAppWidgetIdIfAllowed(id, info.profile, info.provider, null) }.getOrDefault(false)
+        if (allowed) configureOrPlaceWidget(id, info)
+        else bindWidget.launch(Intent(android.appwidget.AppWidgetManager.ACTION_APPWIDGET_BIND)
+            .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+            .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+            .putExtra(android.appwidget.AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE, info.profile))
+    }
+
+    private fun configureOrPlaceWidget(id: Int, info: android.appwidget.AppWidgetProviderInfo) {
+        val optional = info.widgetFeatures and android.appwidget.AppWidgetProviderInfo.WIDGET_FEATURE_CONFIGURATION_OPTIONAL != 0
+        if (info.configure != null && !optional) {
+            val started = runCatching { widgetHost.startAppWidgetConfigureActivityForResult(this, id, 0, REQ_WIDGET_CONFIG, null) }.isSuccess
+            if (started) return
+        }
+        placeWidget(id, info)
+    }
+
+    private fun placeWidget(id: Int, info: android.appwidget.AppWidgetProviderInfo) {
+        pendingWidget = null
+        val (sx, sy) = spanFor(info)
+        val key = LayoutStore.WIDGET_PREFIX + id
+        layoutStore.widgets[key] = com.ioslauncher.model.WidgetSpec(id, sx, sy)
+        val page = pager.currentPage.coerceAtMost(homePages.size - 1).coerceAtLeast(0)
+        layoutStore.addToPage(key, page)
+        applyLayout(true)
+        if (pager.currentPage >= homePages.size) pager.snapTo(page)
+        val p = layoutStore.pageOf(key)
+        if (p >= 0 && p != pager.currentPage) pager.snapTo(p)
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == REQ_WIDGET_CONFIG) {
+            val p = pendingWidget
+            if (p != null) { if (resultCode == RESULT_OK) placeWidget(p.first, p.second) else { widgetHost.deleteAppWidgetId(p.first); pendingWidget = null } }
+            return
+        }
+        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onWidgetLongPress(view: WidgetCell) {
+        if (isEditMode) return
+        val id = widgetId(view.key) ?: return
+        val info = widgetManager.getAppWidgetInfo(id)
+        val cols = dimens.cols
+        val items = buildList {
+            val reconfigurable = info?.configure != null &&
+                info.widgetFeatures and android.appwidget.AppWidgetProviderInfo.WIDGET_FEATURE_RECONFIGURABLE != 0
+            if (reconfigurable) add(MenuItem("Edit Widget") {
+                runCatching { widgetHost.startAppWidgetConfigureActivityForResult(this@MainActivity, id, 0, REQ_WIDGET_RECONFIG, null) }
+            })
+            add(MenuItem("Small  ·  2 × 2") { onFolderResize(view.key, minOf(2, cols), 2, true) })
+            add(MenuItem("Medium  ·  $cols × 2") { onFolderResize(view.key, cols, 2, true) })
+            add(MenuItem("Large  ·  $cols × 4") { onFolderResize(view.key, cols, 4, true) })
+            add(MenuItem("Edit Home Screen") { enterEditMode() })
+            add(MenuItem("Remove Widget", destructive = true) { showRemoveWidgetAlert(view.key) })
+        }
+        showMenu(view.dragSnapshot(), view.dragBoundsOnScreen(), items)
+    }
+
+    private fun showRemoveWidgetAlert(key: String) {
+        addOverlay(AlertOverlay(this, this, "Remove Widget?",
+            "Removing this widget will not delete any apps or data.",
+            listOf(
+                AlertButton("Remove", AlertButton.DESTRUCTIVE) { removeWidget(key) },
+                AlertButton("Cancel", AlertButton.BOLD),
+            )))
+    }
+
+    private fun removeWidget(key: String) {
+        widgetId(key)?.let { runCatching { widgetHost.deleteAppWidgetId(it) } }
+        layoutStore.removeFromHome(key)
+        applyLayout(true)
+    }
+
+    /** Free widget ids the host still holds but the layout no longer uses (e.g. after a crash mid-add). */
+    private fun cleanupWidgetIds() {
+        val used = layoutStore.widgets.values.map { it.appWidgetId }.toSet()
+        runCatching { widgetHost.appWidgetIds }.getOrNull()?.forEach { id ->
+            if (id !in used && pendingWidget?.first != id) runCatching { widgetHost.deleteAppWidgetId(id) }
         }
     }
 
@@ -607,10 +753,11 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         showMenu(view.dragSnapshot(), view.dragBoundsOnScreen(), items)
     }
 
+    /** Resize a folder or widget (cell units). */
     override fun onFolderResize(folderId: String, spanX: Int, spanY: Int, done: Boolean) {
-        val f = layoutStore.folders[folderId] ?: return
-        f.spanX = spanX.coerceIn(1, dimens.cols)
-        f.spanY = spanY.coerceIn(1, dimens.gridRows(layoutStore.pageOf(folderId).coerceAtLeast(0)))
+        if (!layoutStore.isBlock(folderId)) return
+        layoutStore.setSpan(folderId, spanX.coerceIn(1, dimens.cols),
+            spanY.coerceIn(1, dimens.gridRows(layoutStore.pageOf(folderId).coerceAtLeast(0))))
         layoutStore.normalize(removeEmpty = done)
         if (done) layoutStore.save()
         applyLayout(true)
@@ -795,5 +942,11 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             spring.dampingRatio = damping
             start()
         }
+    }
+
+    companion object {
+        private const val WIDGET_HOST_ID = 1024
+        private const val REQ_WIDGET_CONFIG = 41
+        private const val REQ_WIDGET_RECONFIG = 42
     }
 }

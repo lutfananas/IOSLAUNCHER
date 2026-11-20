@@ -99,4 +99,7 @@ interface LauncherHost {
     fun onFolderLongPress(view: FolderView) {}
     fun onFolderResize(folderId: String, spanX: Int, spanY: Int, done: Boolean) {}
     fun isFolderDropTarget(key: String): Boolean = false
+    /** Widget host view for a "widget:<id>" key (created by the activity, which owns the AppWidgetHost). */
+    fun createWidgetView(key: String): View? = null
+    fun onWidgetLongPress(view: WidgetCell) {}
 }

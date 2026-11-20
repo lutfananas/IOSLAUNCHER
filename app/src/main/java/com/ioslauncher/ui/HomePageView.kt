@@ -66,6 +66,13 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
         }
         val shown = ArrayList<String>()
         for (k in newKeys) {
+            if (layout.isWidget(k)) {
+                val v = views[k] ?: host.createWidgetView(k)?.also { views[k] = it; addView(it) } ?: continue
+                val (sx, sy) = layout.spanOf(k, pageIndex)
+                (v as? WidgetCell)?.let { it.bind(sx, sy); it.setEditMode(host.isEditMode) }
+                shown += k
+                continue
+            }
             val folder = layout.folders[k]
             if (folder != null) {
                 val v = views.getOrPut(k) { FolderView(context, host).also { addView(it) } } as FolderView
@@ -91,7 +98,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
     fun viewFor(key: String): View? = views[key]
 
     fun setEditMode(edit: Boolean) = views.values.forEach {
-        when (it) { is AppIconView -> it.setEditMode(edit); is FolderView -> it.setEditMode(edit) }
+        when (it) { is AppIconView -> it.setEditMode(edit); is FolderView -> it.setEditMode(edit); is WidgetCell -> it.setEditMode(edit) }
     }
 
     fun reloadIcons() = views.values.forEach { if (it is AppIconView) it.reloadIcon() else it.invalidate() }
@@ -108,6 +115,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
             val p = placements.getOrNull(i) ?: return@forEachIndexed
             val o = cellOrigin(p.left, p.top)
             val v = views[k]
+            if (v is WidgetCell) return@forEachIndexed     // widgets never take part in folders
             if (v is FolderView) {
                 val ch = d.cellH(pageIndex); val it0 = d.iconTopIn(pageIndex)
                 val r = RectF(o.x + (d.cellWidth - d.iconSize) / 2f, o.y + it0,

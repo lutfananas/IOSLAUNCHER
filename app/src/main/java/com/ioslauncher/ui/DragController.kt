@@ -50,7 +50,7 @@ class DragController(private val a: MainActivity) {
         if (folderReady) a.root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
     }
 
-    private val isFolderDrag get() = dragKey?.let { a.layoutStore.isFolder(it) } == true
+    private val isFolderDrag get() = dragKey?.let { a.layoutStore.isBlock(it) } == true
 
     fun start(view: View, rawX: Float, rawY: Float) {
         val item = view as? DragItem ?: return
@@ -200,7 +200,7 @@ class DragController(private val a: MainActivity) {
         val layout = a.layoutStore
         var mergedInto: String? = null
         val candidate = folderCandidate
-        if (key != null && candidate != null && folderReady && !layout.isFolder(key)) {
+        if (key != null && candidate != null && folderReady && !layout.isBlock(key)) {
             mergedInto = if (layout.isFolder(candidate)) {
                 layout.addToFolder(candidate, key); candidate
             } else {

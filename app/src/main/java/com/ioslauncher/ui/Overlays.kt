@@ -618,3 +618,125 @@ class FolderOverlay(context: Context, host: OverlayHost, private val folder: com
         super.close(after)
     }
 }
+
+// ---------------------------------------------------------------------------------------------------
+// Widget gallery (Liquid Glass sheet): every installed widget, grouped by app, with preview and size
+// ---------------------------------------------------------------------------------------------------
+
+@SuppressLint("ViewConstructor")
+class WidgetPickerOverlay(
+    context: Context, host: OverlayHost,
+    private val providers: List<android.appwidget.AppWidgetProviderInfo>,
+    private val spanFor: (android.appwidget.AppWidgetProviderInfo) -> Pair<Int, Int>,
+    private val onPick: (android.appwidget.AppWidgetProviderInfo) -> Unit,
+) : Overlay(context, host) {
+    override val scrimColor = Color.argb(90, 0, 0, 0)
+    private val sheet = FrameLayout(context)
+    private val d = host.dimens
+    private sealed interface Row {
+        data class Header(val title: String) : Row
+        data class Item(val info: android.appwidget.AppWidgetProviderInfo) : Row
+    }
+
+    init {
+        val pm = context.packageManager
+        val dm = context.resources.displayMetrics.densityDpi
+        val rows = ArrayList<Row>()
+        providers.groupBy { it.provider.packageName }
+            .map { (pkg, list) -> (runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)) to list }
+            .sortedBy { it.first.lowercase() }
+            .forEach { (label, list) -> rows += Row.Header(label); list.forEach { rows += Row.Item(it) } }
+
+        sheet.background = GlassDrawable(d.pt(34f), context.getColor(R.color.menu_bg), shadow = true)
+        val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        sheet.addView(col, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        val textColor = context.getColor(R.color.menu_text)
+        val header = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+            setPadding(d.pt(22f).toInt(), d.pt(18f).toInt(), d.pt(18f).toInt(), d.pt(8f).toInt())
+        }
+        header.addView(TextView(context).apply {
+            text = "Add Widget"; setTextColor(textColor)
+            typeface = Typeface.create(Typeface.DEFAULT, 700, false)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(24f))
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        header.addView(TextView(context).apply {
+            text = "Done"; setTextColor(Color.rgb(10, 132, 255))
+            typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(17f))
+            setOnClickListener { close() }
+        })
+        col.addView(header)
+        if (rows.isEmpty()) col.addView(TextView(context).apply {
+            text = "No widgets available."; setTextColor(textColor); gravity = Gravity.CENTER
+            setPadding(0, d.pt(40f).toInt(), 0, 0)
+        })
+        val rv = RecyclerView(context)
+        rv.layoutManager = LinearLayoutManager(context)
+        rv.clipToPadding = false
+        rv.setPadding(d.pt(16f).toInt(), 0, d.pt(16f).toInt(), d.pt(24f).toInt() + d.bottomInset)
+        val previewH = d.pt(110f).toInt()
+        rv.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun getItemCount() = rows.size
+            override fun getItemViewType(position: Int) = if (rows[position] is Row.Header) 0 else 1
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val v: View = if (viewType == 0) TextView(context).apply {
+                    setTextColor(textColor); alpha = 0.6f
+                    typeface = Typeface.create(Typeface.DEFAULT, 600, false)
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(13f))
+                    setPadding(d.pt(6f).toInt(), d.pt(16f).toInt(), 0, d.pt(6f).toInt())
+                } else LinearLayout(context).apply {
+                    orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL
+                    setPadding(d.pt(10f).toInt(), d.pt(8f).toInt(), d.pt(10f).toInt(), d.pt(8f).toInt())
+                    background = SquircleDrawable(Color.argb(28, 128, 128, 128), d.pt(18f))
+                    addView(android.widget.ImageView(context).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER },
+                        LinearLayout.LayoutParams(d.pt(130f).toInt(), previewH))
+                    addView(LinearLayout(context).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(d.pt(14f).toInt(), 0, 0, 0)
+                        addView(TextView(context).apply { setTextColor(textColor); setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(16f)); maxLines = 2 })
+                        addView(TextView(context).apply { setTextColor(textColor); alpha = 0.6f; setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(13f)) })
+                    }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                }
+                v.layoutParams = RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    if (viewType == 1) bottomMargin = d.pt(8f).toInt()
+                }
+                return object : RecyclerView.ViewHolder(v) {}
+            }
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                when (val r = rows[position]) {
+                    is Row.Header -> (holder.itemView as TextView).text = r.title.uppercase()
+                    is Row.Item -> {
+                        val row = holder.itemView as LinearLayout
+                        val img = row.getChildAt(0) as android.widget.ImageView
+                        val texts = row.getChildAt(1) as LinearLayout
+                        val info = r.info
+                        img.setImageDrawable(runCatching { info.loadPreviewImage(context, dm) ?: info.loadIcon(context, dm) }.getOrNull())
+                        (texts.getChildAt(0) as TextView).text = runCatching { info.loadLabel(pm) }.getOrDefault(info.provider.className)
+                        val (sx, sy) = spanFor(info)
+                        (texts.getChildAt(1) as TextView).text = "$sx × $sy"
+                        row.setOnClickListener { close { onPick(info) } }
+                    }
+                }
+            }
+        }
+        col.addView(rv, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        sheet.isClickable = true
+        addView(sheet, LayoutParams(LayoutParams.MATCH_PARENT, d.height - d.gridTop - d.pt(10f).toInt(), Gravity.BOTTOM).apply {
+            leftMargin = d.pt(8f).toInt(); rightMargin = d.pt(8f).toInt()
+        })
+        setOnClickListener { close() }
+    }
+
+    override fun show() {
+        super.show()
+        sheet.translationY = d.height.toFloat()
+        sheet.animate().translationY(0f).setDuration(380).setInterpolator(HomePageView.EASE)
+            .setUpdateListener { sheet.invalidate() }.start()
+    }
+
+    override fun close(after: (() -> Unit)?) {
+        sheet.animate().translationY(d.height.toFloat()).setDuration(260).start()
+        super.close(after)
+    }
+}

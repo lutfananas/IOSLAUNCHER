@@ -19,6 +19,9 @@ data class Folder(
     var spanY: Int = 1,
 )
 
+/** A home-screen widget (Android AppWidget) occupying [spanX] × [spanY] cells. */
+data class WidgetSpec(val appWidgetId: Int, var spanX: Int, var spanY: Int)
+
 /**
  * Home screen layout. Each page is an ordered list of items (app keys or folder ids). Items flow
  * left-to-right, top-to-bottom; multi-cell folders take the first free spot that fits them
@@ -28,6 +31,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
     val pages: MutableList<MutableList<String>> = mutableListOf()
     val dock: MutableList<String> = mutableListOf()
     val folders: LinkedHashMap<String, Folder> = LinkedHashMap()
+    val widgets: LinkedHashMap<String, WidgetSpec> = LinkedHashMap()
     /** Free-placement cell (col, row) of each item on its page. */
     val positions: HashMap<String, android.graphics.Point> = HashMap()
     val free get() = prefs.freePlacement
@@ -42,10 +46,26 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
     init { load() }
 
     fun isFolder(key: String) = key.startsWith(FOLDER_PREFIX)
+    fun isWidget(key: String) = key.startsWith(WIDGET_PREFIX)
+    /** Folders and widgets: multi-cell items that never go into the dock or into folders. */
+    fun isBlock(key: String) = isFolder(key) || isWidget(key)
 
     fun spanOf(key: String, page: Int): Pair<Int, Int> {
-        val f = folders[key] ?: return 1 to 1
-        return f.spanX.coerceIn(1, cols) to f.spanY.coerceIn(1, rowsFor(page))
+        folders[key]?.let { return it.spanX.coerceIn(1, cols) to it.spanY.coerceIn(1, rowsFor(page)) }
+        widgets[key]?.let { return it.spanX.coerceIn(1, cols) to it.spanY.coerceIn(1, rowsFor(page)) }
+        return 1 to 1
+    }
+
+    fun setSpan(key: String, sx: Int, sy: Int) {
+        folders[key]?.let { it.spanX = sx; it.spanY = sy }
+        widgets[key]?.let { it.spanX = sx; it.spanY = sy }
+    }
+
+    /** Add a block (widget) to [page]: first free spot (free placement) or top of the page (flow). */
+    fun addToPage(key: String, page: Int) {
+        while (pages.size <= page) pages += mutableListOf<String>()
+        if (free) pages[page] += key else pages[page].add(0, key)
+        normalize(); save()
     }
 
     /** Cell rectangles (col, row, col+spanX, row+spanY) for [page]'s items; null = doesn't fit. */
@@ -92,6 +112,13 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
             o.optJSONObject("pos")?.let { po ->
                 po.keys().forEach { k -> val a = po.getJSONArray(k); positions[k] = android.graphics.Point(a.getInt(0), a.getInt(1)) }
             }
+            o.optJSONArray("widgets")?.let { wa ->
+                for (i in 0 until wa.length()) {
+                    val w = wa.getJSONObject(i)
+                    val spec = WidgetSpec(w.getInt("id"), w.optInt("sx", 2), w.optInt("sy", 2))
+                    widgets[WIDGET_PREFIX + spec.appWidgetId] = spec
+                }
+            }
             o.optJSONArray("folders")?.let { fa ->
                 for (i in 0 until fa.length()) {
                     val f = fa.getJSONObject(i)
@@ -115,6 +142,9 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
                 put(JSONObject().put("id", f.id).put("name", f.name).put("apps", JSONArray(f.apps)).put("sx", f.spanX).put("sy", f.spanY))
             }
         })
+        o.put("widgets", JSONArray().apply {
+            widgets.values.forEach { put(JSONObject().put("id", it.appWidgetId).put("sx", it.spanX).put("sy", it.spanY)) }
+        })
         o.put("pos", JSONObject().apply { positions.forEach { (k, p) -> put(k, JSONArray().put(p.x).put(p.y)) } })
         prefs.layoutJson = o.toString()
     }
@@ -131,7 +161,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
             return true
         }
         var changed = false
-        val valid = { k: String -> k in keys || (isFolder(k) && folders.containsKey(k)) }
+        val valid = { k: String -> k in keys || (isFolder(k) && folders.containsKey(k)) || (isWidget(k) && widgets.containsKey(k)) }
         folders.values.forEach { if (it.apps.retainAll(keys)) changed = true }
         val empty = folders.values.filter { it.apps.isEmpty() }.map { it.id }
         empty.forEach { folders.remove(it); changed = true }
@@ -164,6 +194,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
         detach(key)
         positions.remove(key)
         folders.remove(key)
+        widgets.remove(key)
         folders.values.forEach { it.apps.remove(key) }
         folders.values.filter { it.apps.isEmpty() }.map { it.id }.forEach { id -> detach(id); folders.remove(id) }
         normalize()
@@ -228,7 +259,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
             dock.forEach { pages.last().add(it) }; dock.clear(); changed = true
         }
         // Folders never live in the dock.
-        dock.filter { isFolder(it) }.forEach { dock.remove(it); pages.last().add(it); changed = true }
+        dock.filter { isBlock(it) }.forEach { dock.remove(it); pages.last().add(it); changed = true }
         if (!free && positions.isNotEmpty()) { positions.clear(); changed = true }
         var i = 0
         while (i < pages.size) {
@@ -290,6 +321,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
     companion object {
         const val DOCK_MAX = 4
         const val FOLDER_PREFIX = "folder:"
+        const val WIDGET_PREFIX = "widget:"
     }
 }
 
