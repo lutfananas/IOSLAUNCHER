@@ -223,7 +223,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             unlockDelays.clear()
             playUnlock()
         } else if (returningFromApp) {
-            playReturnFromApp()
+            if (!playCloseToIcon()) playReturnFromApp()
         }
         returningFromApp = false
         library.setApps(launcher.repository.apps)
@@ -517,6 +517,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             la.startMainActivity(app.component, app.user, bounds, opts.toBundle())
             launcher.prefs.recordLaunch(app.key)
             returningFromApp = true
+            // Remember the icon so the app can shrink back into it when closed.
+            lastLaunchKey = (view as? AppIconView)?.takeIf { it.source == IconSource.HOME || it.source == IconSource.DOCK }?.app?.key
             // Search closes once an app opens (carousel or its suggestions row).
             overlays.filterIsInstance<SearchOverlay>().forEach { it.close() }
         } catch (e: Exception) {
@@ -923,6 +925,55 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         dock.translationY = dockTargetTY()
         dock.scaleX = 1f; dock.scaleY = 1f; dock.alpha = dockTargetAlpha()
         bottomBar.forEach { it.alpha = barAlpha(it) }
+    }
+
+    private var lastLaunchKey: String? = null
+    private var closeAnim: CloseToIconView? = null
+
+    /**
+     * Closing an app (swipe up / back / home): it shrinks back into its icon on the grid or dock.
+     * Returns false when that icon isn't on screen (opened from search, App Library, another page…).
+     */
+    private fun playCloseToIcon(): Boolean {
+        val key = lastLaunchKey ?: return false
+        lastLaunchKey = null
+        val v = viewForKey(key) as? AppIconView ?: return false
+        val bmp = v.bitmap ?: return false
+        val onScreen = when (v.source) {
+            IconSource.DOCK -> dockAvailable
+            else -> homePages.getOrNull(pager.currentPage)?.viewFor(key) === v && overlays.isEmpty()
+        }
+        if (!onScreen) return false
+        closeAnim?.let { root.removeView(it) }
+        val target = v.iconBoundsOnScreen()
+        // The system has already shrunk the window a bit during the gesture: start just inside the screen.
+        val inset = dimens.width * 0.06f
+        val from = android.graphics.RectF(inset, inset * 1.6f, dimens.width - inset, dimens.height - inset * 1.6f)
+        val card = CloseToIconView(this, from, target, bmp)
+        root.addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        closeAnim = card
+        v.alpha = 0f
+        // Home screen eases forward slightly underneath, like iOS.
+        for (h in listOf<View>(pager, dock)) {
+            h.pivotX = dimens.width / 2f
+            h.pivotY = if (h === dock) dimens.dockHeight / 2f else dimens.height / 2f
+            h.scaleX = 1.05f; h.scaleY = 1.05f
+            spring(h, DynamicAnimation.SCALE_X, 1f, 220f)
+            spring(h, DynamicAnimation.SCALE_Y, 1f, 220f)
+        }
+        val holder = androidx.dynamicanimation.animation.FloatValueHolder(0f)
+        androidx.dynamicanimation.animation.SpringAnimation(holder).apply {
+            spring = androidx.dynamicanimation.animation.SpringForce(1f).setStiffness(240f).setDampingRatio(0.8f)
+            setStartValue(0f)
+            addUpdateListener { _, value, _ -> card.progress = value }
+            addEndListener { _, _, _, _ ->
+                v.alpha = 1f
+                root.removeView(card)
+                if (closeAnim === card) closeAnim = null
+            }
+            start()
+        }
+        return true
     }
 
     /** Coming back from an app: the home screen settles back from a slight zoom, like iOS. */
