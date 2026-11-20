@@ -85,11 +85,42 @@ class IconProvider(private val context: Context, private val prefs: Prefs) {
         return info?.getIcon(DENSITY) ?: runCatching { context.packageManager.getApplicationIcon(app.packageName) }.getOrNull()
     }
 
+    private val packCache = HashMap<String, IconPack?>()
+
+    @Synchronized
+    fun pack(pkg: String): IconPack? = packCache.getOrPut(pkg) { runCatching { IconPack(context, pkg) }.getOrNull() }
+
+    /** Bitmap for a custom icon spec ("file:..." or "pack:pkg/name"), unshaped, [size]×[size]. */
+    fun customRaw(spec: String, size: Int): Bitmap? = runCatching {
+        when {
+            spec.startsWith("file:") -> {
+                val src = android.graphics.BitmapFactory.decodeFile(spec.removePrefix("file:")) ?: return null
+                val side = minOf(src.width, src.height)
+                val crop = Rect((src.width - side) / 2, (src.height - side) / 2, (src.width + side) / 2, (src.height + side) / 2)
+                Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888).also {
+                    Canvas(it).drawBitmap(src, crop, Rect(0, 0, size, size), Paint(Paint.FILTER_BITMAP_FLAG))
+                }
+            }
+            spec.startsWith("pack:") -> {
+                val rest = spec.removePrefix("pack:")
+                val slash = rest.indexOf('/')
+                val d = pack(rest.substring(0, slash))?.load(rest.substring(slash + 1), DENSITY) ?: return null
+                drawToBitmap(d, size)
+            }
+            else -> null
+        }
+    }.getOrNull()
+
     private fun render(app: AppInfo, size: Int): Bitmap {
         val pack = currentPack()
         val out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         val shape = IosShape.iconPath(size.toFloat())
+
+        // 1. Per-app custom icon (own image or a chosen icon-pack icon), always fitted to the iOS squircle.
+        prefs.customIcon(app.key)?.let { spec ->
+            customRaw(spec, size)?.let { raw -> drawNormalized(canvas, raw, shape, size); return badge(app, out) }
+        }
 
         val packDrawable = pack?.drawableFor(app.component, DENSITY)
         if (packDrawable != null) {

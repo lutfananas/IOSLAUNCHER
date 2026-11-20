@@ -460,11 +460,13 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
                     overlays.filterIsInstance<FolderOverlay>().forEach { it.close() }
                     applyLayout(true)
                 },
+                MenuItem("Edit Icon") { editIcon(app) },
                 MenuItem("App Info") { appInfo(app) },
                 MenuItem("Delete App", destructive = true) { uninstall(app) },
             )
             view.source == IconSource.HOME || view.source == IconSource.DOCK -> listOf(
                 MenuItem("Edit Home Screen") { enterEditMode() },
+                MenuItem("Edit Icon") { editIcon(app) },
                 MenuItem("App Info") { appInfo(app) },
                 MenuItem("Remove App", destructive = true) { showRemoveAlert(app) },
             )
@@ -483,6 +485,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             layoutStore.appendToHome(app.key); layoutStore.normalize(); layoutStore.save(); applyLayout(false)
             Toast.makeText(this@MainActivity, "Added to Home Screen", Toast.LENGTH_SHORT).show()
         })
+        add(MenuItem("Edit Icon") { editIcon(app) })
         add(MenuItem("App Info") { appInfo(app) })
         add(MenuItem("Delete App", destructive = true) { uninstall(app) })
     }
@@ -584,6 +587,10 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
                 },
                 AlertButton("Cancel", AlertButton.BOLD),
             )))
+    }
+
+    private fun editIcon(app: AppInfo) {
+        startActivity(Intent(this, IconChooserActivity::class.java).putExtra(IconChooserActivity.EXTRA_KEY, app.key))
     }
 
     private fun appInfo(app: AppInfo) {

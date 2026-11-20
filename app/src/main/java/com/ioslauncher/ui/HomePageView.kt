@@ -120,6 +120,14 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
         return null
     }
 
+    /** Grid cell (col, row in page rows) under (x, y). */
+    fun cellAt(x: Float, y: Float): Point {
+        val d = host.dimens
+        val col = kotlin.math.floor((x - d.sidePadding) / d.cellWidth).toInt().coerceIn(0, d.cols - 1)
+        val row = kotlin.math.floor((y - d.gridTop) / d.cellHeight).toInt().coerceIn(rowOffset, d.rows - 1) - rowOffset
+        return Point(col, row)
+    }
+
     /** Insertion index for a drop at (x, y), in this view's coordinates. */
     fun indexAt(x: Float, y: Float, itemCount: Int, excludeKey: String?): Int {
         val d = host.dimens

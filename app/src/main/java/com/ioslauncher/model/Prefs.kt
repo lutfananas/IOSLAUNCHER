@@ -48,6 +48,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("liquid_glass", true)
         set(v) = sp.edit { putBoolean("liquid_glass", v) }
 
+    /** Free placement: items keep the exact cell they're dropped in; empty cells stay empty (no auto-fill). */
+    var freePlacement: Boolean
+        get() = sp.getBoolean("free_placement", false)
+        set(v) = sp.edit { putBoolean("free_placement", v) }
+
+    /** Custom icon per app: "file:/abs/path.png" or "pack:<package>/<drawableName>". */
+    fun customIcon(appKey: String): String? = sp.getString("icon:$appKey", null)
+    fun setCustomIcon(appKey: String, value: String?) = sp.edit { if (value == null) remove("icon:$appKey") else putString("icon:$appKey", value) }
+
     var autoAddNewApps: Boolean
         get() = sp.getBoolean("auto_add", true)
         set(v) = sp.edit { putBoolean("auto_add", v) }

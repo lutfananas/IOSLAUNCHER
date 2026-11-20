@@ -74,6 +74,29 @@ class IconPack(private val context: Context, val packageName: String) {
         return ComponentName(pkg, cls)
     }
 
+    /** Every icon in the pack (from drawable.xml when present, else everything appfilter references). */
+    val allIconNames: List<String> by lazy {
+        val names = LinkedHashSet<String>()
+        runCatching {
+            val id = res.getIdentifier("drawable", "xml", packageName)
+            val parser: XmlPullParser = if (id != 0) res.getXml(id) else {
+                val stream = res.assets.open("drawable.xml")
+                XmlPullParserFactory.newInstance().newPullParser().apply { setInput(stream, "utf-8") }
+            }
+            var e = parser.eventType
+            while (e != XmlPullParser.END_DOCUMENT) {
+                if (e == XmlPullParser.START_TAG && parser.name == "item") parser.getAttributeValue(null, "drawable")?.let { names += it }
+                e = parser.next()
+            }
+        }
+        if (names.isEmpty()) names += componentMap.values
+        names.filter { res.getIdentifier(it, "drawable", packageName) != 0 || res.getIdentifier(it, "mipmap", packageName) != 0 }
+    }
+
+    /** Drawable names the pack maps to [pkg] (suggestions for the icon chooser). */
+    fun suggestionsFor(pkg: String): List<String> =
+        componentMap.entries.filter { it.key.startsWith("$pkg/") }.map { it.value }.distinct()
+
     fun drawableFor(component: ComponentName, density: Int): Drawable? {
         val name = componentMap[component.flattenToString()] ?: packageMap[component.packageName] ?: return null
         return load(name, density)

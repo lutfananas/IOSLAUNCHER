@@ -85,8 +85,9 @@ class SettingsActivity : Activity() {
         group(listOf(
             stepperRow("Columns", prefs.gridCols) { prefs.gridCols = it },
             stepperRow("Rows", prefs.gridRows) { prefs.gridRows = it },
+            switchRow("Free Placement (No Auto-Fill)", prefs.freePlacement) { prefs.freePlacement = it },
         ))
-        footer("Up to 8 × 8. Icons and names shrink automatically on dense grids. Page 1 keeps its top row for the clock and status.")
+        footer("Free Placement: icons stay exactly in the cell you drop them and empty spaces stay empty; dropping on another icon swaps them. Up to 8 × 8. Icons and names shrink automatically on dense grids. Page 1 keeps its top row for the clock and status.")
 
         section("DOCK")
         group(listOf(

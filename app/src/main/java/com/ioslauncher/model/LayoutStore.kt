@@ -28,6 +28,9 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
     val pages: MutableList<MutableList<String>> = mutableListOf()
     val dock: MutableList<String> = mutableListOf()
     val folders: LinkedHashMap<String, Folder> = LinkedHashMap()
+    /** Free-placement cell (col, row) of each item on its page. */
+    val positions: HashMap<String, android.graphics.Point> = HashMap()
+    val free get() = prefs.freePlacement
     private val known: MutableSet<String> = mutableSetOf()
     private var initialized = false
 
@@ -46,7 +49,25 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
 
     /** Cell rectangles (col, row, col+spanX, row+spanY) for [page]'s items; null = doesn't fit. */
     fun placements(page: Int, keys: List<String> = pages[page]): List<Rect?> =
-        GridPacker.pack(keys, cols, rowsFor(page)) { spanOf(it, page) }
+        if (free) GridPacker.packFree(keys, cols, rowsFor(page), { spanOf(it, page) }, { positions[it] })
+        else GridPacker.pack(keys, cols, rowsFor(page)) { spanOf(it, page) }
+
+    /** True if [rect] (cells) on [page] is inside the grid and not covered by anything except [ignore]. */
+    fun isFree(page: Int, rect: Rect, ignore: String?): Boolean {
+        if (rect.left < 0 || rect.top < 0 || rect.right > cols || rect.bottom > rowsFor(page)) return false
+        val list = pages.getOrNull(page) ?: return true
+        val pl = placements(page, list)
+        list.forEachIndexed { i, k -> if (k != ignore) pl[i]?.let { if (Rect.intersects(it, rect)) return false } }
+        return true
+    }
+
+    /** Key of the item covering cell (col,row) on [page], if any. */
+    fun itemAtCell(page: Int, col: Int, row: Int): String? {
+        val list = pages.getOrNull(page) ?: return null
+        val pl = placements(page, list)
+        list.forEachIndexed { i, k -> pl[i]?.let { if (it.contains(col, row)) return k } }
+        return null
+    }
 
     fun folderOf(appKey: String): Folder? = folders.values.firstOrNull { appKey in it.apps }
 
@@ -67,6 +88,9 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
             for (i in 0 until d.length()) dock += d.getString(i)
             val k = o.getJSONArray("known")
             for (i in 0 until k.length()) known += k.getString(i)
+            o.optJSONObject("pos")?.let { po ->
+                po.keys().forEach { k -> val a = po.getJSONArray(k); positions[k] = android.graphics.Point(a.getInt(0), a.getInt(1)) }
+            }
             o.optJSONArray("folders")?.let { fa ->
                 for (i in 0 until fa.length()) {
                     val f = fa.getJSONObject(i)
@@ -90,6 +114,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
                 put(JSONObject().put("id", f.id).put("name", f.name).put("apps", JSONArray(f.apps)).put("sx", f.spanX).put("sy", f.spanY))
             }
         })
+        o.put("pos", JSONObject().apply { positions.forEach { (k, p) -> put(k, JSONArray().put(p.x).put(p.y)) } })
         prefs.layoutJson = o.toString()
     }
 
@@ -119,6 +144,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
                 if (prefs.autoAddNewApps && !isOnHome(app.key)) appendToHome(app.key)
             }
         }
+        if (positions.keys.retainAll { k -> pages.any { k in it } }) changed = true
         if (normalize()) changed = true
         if (changed) save()
         return changed
@@ -135,6 +161,7 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
     /** Remove an app or a whole folder from the Home Screen (apps stay in the App Library). */
     fun removeFromHome(key: String) {
         detach(key)
+        positions.remove(key)
         folders.remove(key)
         folders.values.forEach { it.apps.remove(key) }
         folders.values.filter { it.apps.isEmpty() }.map { it.id }.forEach { id -> detach(id); folders.remove(id) }
@@ -148,6 +175,14 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
         dock.remove(key)
     }
 
+    /** Free placement: put [key] at (col,row) on [page]. */
+    fun place(key: String, page: Int, col: Int, row: Int) {
+        detach(key)
+        while (pages.size <= page) pages += mutableListOf<String>()
+        pages[page] += key
+        positions[key] = android.graphics.Point(col, row)
+    }
+
     /** Turn [targetKey] (an app on a page) into a folder holding it and [draggedKey]. */
     fun createFolder(targetKey: String, draggedKey: String, name: String): Folder? {
         val page = pages.indexOfFirst { targetKey in it }
@@ -158,12 +193,15 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
         val folder = Folder(FOLDER_PREFIX + UUID.randomUUID().toString(), name, mutableListOf(targetKey, draggedKey))
         folders[folder.id] = folder
         list[idx] = folder.id
+        positions.remove(draggedKey)
+        positions.remove(targetKey)?.let { positions[folder.id] = it }
         return folder
     }
 
     fun addToFolder(folderId: String, appKey: String) {
         val f = folders[folderId] ?: return
         detach(appKey)
+        positions.remove(appKey)
         if (appKey !in f.apps) f.apps += appKey
     }
 
@@ -176,7 +214,8 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
         val list = pages[page]
         val idx = list.indexOf(folderId)
         list.add(if (idx >= 0) idx + 1 else list.size, appKey)
-        if (f.apps.isEmpty()) { list.remove(folderId); folders.remove(folderId) }
+        positions.remove(appKey)   // free placement: lands in the first empty cell
+        if (f.apps.isEmpty()) { list.remove(folderId); folders.remove(folderId); positions.remove(folderId) }
         normalize(); save()
     }
 
@@ -189,14 +228,26 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
         }
         // Folders never live in the dock.
         dock.filter { isFolder(it) }.forEach { dock.remove(it); pages.last().add(it); changed = true }
+        if (!free && positions.isNotEmpty()) { positions.clear(); changed = true }
         var i = 0
         while (i < pages.size) {
             val page = pages[i]
             val placed = placements(i)
+            if (free) {
+                // Pin every placed item to its cell so nothing re-flows later.
+                page.forEachIndexed { idx, k ->
+                    val p = placed.getOrNull(idx) ?: return@forEachIndexed
+                    val cur = positions[k]
+                    if (cur == null || cur.x != p.left || cur.y != p.top) { positions[k] = android.graphics.Point(p.left, p.top); changed = true }
+                }
+            }
             val firstMissing = placed.indexOfFirst { it == null }
             if (firstMissing >= 0) {
-                val overflow = page.subList(firstMissing, page.size).toList()
-                repeat(overflow.size) { page.removeAt(page.lastIndex) }
+                // Flow: everything from the first misfit on moves; free placement: only the misfits move.
+                val overflow = if (free) page.filterIndexed { idx, _ -> placed[idx] == null }
+                    else page.subList(firstMissing, page.size).toList()
+                overflow.forEach { positions.remove(it) }
+                page.removeAll(overflow.toSet())
                 if (i + 1 >= pages.size) pages += mutableListOf<String>()
                 pages[i + 1].addAll(0, overflow)
                 changed = true
@@ -243,6 +294,36 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
 
 /** Flow layout with multi-cell items: each item takes the first free spot (reading order) that fits. */
 object GridPacker {
+    /**
+     * Free placement: items with a valid stored cell keep it (first come wins on overlap); the rest take
+     * the first free spot. Items that fit nowhere get null.
+     */
+    fun packFree(keys: List<String>, cols: Int, rows: Int, span: (String) -> Pair<Int, Int>, pos: (String) -> android.graphics.Point?): List<Rect?> {
+        val used = BooleanArray(cols * rows)
+        val out = arrayOfNulls<Rect>(keys.size)
+        fun fits(c: Int, r: Int, sx: Int, sy: Int): Boolean {
+            if (c < 0 || r < 0 || c + sx > cols || r + sy > rows) return false
+            for (yy in r until r + sy) for (xx in c until c + sx) if (used[yy * cols + xx]) return false
+            return true
+        }
+        fun mark(c: Int, r: Int, sx: Int, sy: Int) { for (yy in r until r + sy) for (xx in c until c + sx) used[yy * cols + xx] = true }
+        val pending = ArrayList<Int>()
+        keys.forEachIndexed { i, k ->
+            val (sx0, sy0) = span(k); val sx = sx0.coerceIn(1, cols); val sy = sy0.coerceIn(1, rows)
+            val p = pos(k)
+            if (p != null && fits(p.x, p.y, sx, sy)) { mark(p.x, p.y, sx, sy); out[i] = Rect(p.x, p.y, p.x + sx, p.y + sy) }
+            else pending += i
+        }
+        for (i in pending) {
+            val (sx0, sy0) = span(keys[i]); val sx = sx0.coerceIn(1, cols); val sy = sy0.coerceIn(1, rows)
+            search@ for (r in 0..rows - sy) for (c in 0..cols - sx) if (fits(c, r, sx, sy)) {
+                mark(c, r, sx, sy); out[i] = Rect(c, r, c + sx, r + sy); break@search
+            }
+        }
+        // Keep list order meaning "overflow from here on": unplaced items go to the end.
+        return out.toList()
+    }
+
     fun pack(keys: List<String>, cols: Int, rows: Int, span: (String) -> Pair<Int, Int>): List<Rect?> {
         val used = BooleanArray(cols * rows)
         val out = ArrayList<Rect?>(keys.size)

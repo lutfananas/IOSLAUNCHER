@@ -24,6 +24,11 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
   kategori, bisa diganti dengan mengetuk judul saat folder dibuka). Di mode edit, folder punya pegangan di sisi kiri/kanan
   (lebar) dan bawah (tinggi) yang bisa ditarik per petak grid. Folder 1×1 menampilkan pratinjau 3×3; folder besar
   menampilkan aplikasinya langsung dan bisa diketuk untuk membuka aplikasi. Ukuran cepat juga ada di menu tekan-lama folder.
+- **Free Placement (tanpa auto-fill).** *Settings → Home Screen Grid → Free Placement*: ikon tetap di petak tempat
+  dilepas, petak kosong dibiarkan kosong; melepas ikon di atas ikon lain menukar posisinya.
+- **Custom icon per aplikasi.** Tekan lama ikon → *Edit Icon*: pilih gambar sendiri dari galeri, atau ambil ikon mana pun
+  dari icon pack yang terinstal (dengan pencarian dan saran ikon yang cocok). Hasilnya dipotong ke bentuk ikon iOS.
+  *Reset to Default Icon* mengembalikan ikon asli.
 - **Grid baris × kolom bisa diatur 3–8** (sampai 8×8). Ikon dan nama otomatis mengecil di grid yang padat.
 - **Dock bisa dimatikan.** Background kaca dock mengecil/membesar mengikuti jumlah ikon di dalamnya.
 - **Tema Liquid Glass.** Dock, folder, kartu App Library, kolom pencarian, menu, alert, tombol, dan indikator halaman memakai

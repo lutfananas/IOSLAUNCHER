@@ -153,6 +153,8 @@ class DragController(private val a: MainActivity) {
         }
         setCandidate(null)
 
+        if (layout.free) { applyFree(key, page, pv, cx, cy); return }
+
         val list = layout.pages[page]
         val cur = list.indexOf(key)
         val count = if (cur >= 0) list.size - 1 else list.size
@@ -162,6 +164,32 @@ class DragController(private val a: MainActivity) {
         list.add(idx.coerceAtMost(list.size), key)
         layout.normalize(removeEmpty = false)
         a.applyLayout(true)
+    }
+
+    /** Free placement: drop exactly on the cell under the finger; empty cells stay empty. */
+    private fun applyFree(key: String, page: Int, pv: HomePageView, cx: Float, cy: Float) {
+        val d = a.dimens
+        val layout = a.layoutStore
+        val (sx, sy) = layout.spanOf(key, page)
+        val cell = pv.cellAt(cx - (sx - 1) * d.cellWidth / 2f, cy - (sy - 1) * d.cellHeight / 2f)
+        val col = cell.x.coerceIn(0, d.cols - sx)
+        val row = cell.y.coerceIn(0, layout.rowsFor(page) - sy)
+        val curPage = layout.pageOf(key)
+        val curPos = layout.positions[key]
+        if (curPage == page && curPos != null && curPos.x == col && curPos.y == row) return
+        val rect = android.graphics.Rect(col, row, col + sx, row + sy)
+        if (layout.isFree(page, rect, key)) {
+            layout.place(key, page, col, row)
+            a.applyLayout(true)
+            return
+        }
+        // Occupied by a single 1×1 icon: swap places (same page only).
+        val occ = layout.itemAtCell(page, col, row) ?: return
+        if (sx == 1 && sy == 1 && layout.spanOf(occ, page) == (1 to 1) && curPage == page && curPos != null) {
+            layout.positions[occ] = android.graphics.Point(curPos)
+            layout.positions[key] = android.graphics.Point(col, row)
+            a.applyLayout(true)
+        }
     }
 
     private fun end() {
