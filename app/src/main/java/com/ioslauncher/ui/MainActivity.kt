@@ -567,9 +567,8 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             returningFromApp = true
             // Remember the icon so the app can shrink back into it when closed.
             lastLaunchKey = (view as? AppIconView)?.takeIf { it.source == IconSource.HOME || it.source == IconSource.DOCK }?.app?.key
-            // Search closes once the app covers the launcher (onStop) — animating it away now would
-            // change the window blur mid-launch and cause a visible blink.
-            closeSearchOnStop = overlays.any { it is SearchOverlay }
+            // Search closes once an app opens (carousel or its suggestions row).
+            overlays.filterIsInstance<SearchOverlay>().forEach { it.close() }
         } catch (e: Exception) {
             Toast.makeText(this, "Unable to open ${app.label}", Toast.LENGTH_SHORT).show()
         }

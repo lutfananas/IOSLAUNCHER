@@ -217,10 +217,7 @@ class AppIconView(context: Context, private val host: LauncherHost, val source: 
                         if (inBadge(event.x, event.y)) host.onRemoveRequested(this)
                     } else if (a != null) {
                         playSoundEffect(android.view.SoundEffectConstants.CLICK)
-                        pressedDim = true
-                        invalidate()
                         host.launchApp(this, a, iconBoundsOnScreen())
-                        postDelayed({ pressedDim = false; invalidate() }, 650)
                     }
                 }
             }
