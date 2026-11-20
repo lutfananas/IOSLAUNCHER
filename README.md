@@ -9,7 +9,7 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
 - **Bentuk ikon 1:1 dengan iOS.** Ikon dipotong dengan *continuous-corner squircle* milik Apple (kurva Bézier yang sama
   dengan `UIBezierPath` `.continuous`, radius 22,37% dari ukuran ikon). Bentuk yang sama juga dipakai untuk dock,
   kartu App Library, menu dan alert. Opsi *Fit Icons to iOS Shape* menskalakan artwork icon pack agar memenuhi squircle.
-- **Animasi buka kunci seperti iOS.** Saat layar dibuka, ikon masuk dari luar tepi layar sambil mengecil ke posisinya
+- **Animasi buka kunci seperti iOS 26.** Ikon dan folder melayang masuk dari tepi layar, berjenjang baris demi baris, dan mendarat dengan pantulan pegas halus; dock naik dari bawah. Setelah itu efek paralaks (ikon bergeser mengikuti kemiringan HP) dan kilau kaca yang mengikuti arah miring aktif.
   dengan spring; dock naik dari bawah.
 - **App Library.** Geser ke kiri melewati halaman terakhir: kategori otomatis (Suggestions, Recently Added, Social,
   Productivity & Finance, Entertainment, dll.) dengan 3 ikon besar + klaster 4 ikon kecil, kategori bisa dibuka penuh,

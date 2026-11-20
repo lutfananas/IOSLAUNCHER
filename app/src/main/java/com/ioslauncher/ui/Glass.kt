@@ -60,6 +60,11 @@ object Glass {
     private val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val shaderMatrix = Matrix()
 
+    /** Light direction from device tilt (-1..1); moves the sheen and rim highlight like iOS lensing. */
+    var lightX = 0f; private set
+    var lightY = 0f; private set
+    fun setLight(x: Float, y: Float) { lightX = x; lightY = y }
+
     fun addListener(l: () -> Unit) { listeners += l }
     fun removeListener(l: () -> Unit) { listeners -= l }
 
@@ -203,13 +208,17 @@ object Glass {
         // Soft sheen from the top-left, like light caught inside the glass.
         canvas.save()
         canvas.clipPath(path)
-        sheenPaint.shader = RadialGradient(rect.left + rect.width() * 0.25f, rect.top, max(rect.width(), rect.height()) * 0.8f,
+        sheenPaint.shader = RadialGradient(rect.left + rect.width() * (0.25f + 0.3f * lightX), rect.top + rect.height() * 0.25f * lightY,
+            max(rect.width(), rect.height()) * 0.8f,
             Color.argb(a(40), 255, 255, 255), Color.TRANSPARENT, Shader.TileMode.CLAMP)
         canvas.drawRect(rect, sheenPaint)
         canvas.restore()
         // Specular rim: bright top-left and bottom-right edges, fading in between.
         rimPaint.strokeWidth = 1.2f * dm
-        rimPaint.shader = LinearGradient(rect.left, rect.top, rect.right, rect.bottom,
+        // Rim gradient axis rotates with the light direction.
+        val ang = Math.toRadians((45.0 + lightX * 40.0 + lightY * 20.0)).toFloat()
+        val hx = kotlin.math.cos(ang) * rect.width() / 2f; val hy = kotlin.math.sin(ang) * rect.height() / 2f
+        rimPaint.shader = LinearGradient(rect.centerX() - hx, rect.centerY() - hy, rect.centerX() + hx, rect.centerY() + hy,
             intArrayOf(Color.argb(a(190), 255, 255, 255), Color.argb(a(25), 255, 255, 255), Color.argb(a(25), 255, 255, 255), Color.argb(a(120), 255, 255, 255)),
             floatArrayOf(0f, 0.38f, 0.62f, 1f), Shader.TileMode.CLAMP)
         canvas.drawPath(path, rimPaint)

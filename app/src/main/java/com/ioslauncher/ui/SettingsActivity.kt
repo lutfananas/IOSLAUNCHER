@@ -134,6 +134,7 @@ class SettingsActivity : Activity() {
         group(listOf(
             switchRow("Hide Status Bar", prefs.hideStatusBar) { prefs.hideStatusBar = it; restartLauncher() },
             switchRow("Unlock Animation", prefs.unlockAnimation) { prefs.unlockAnimation = it },
+            switchRow("Parallax & Glass Tilt", prefs.parallax) { prefs.parallax = it },
             switchRow("Add New Apps to Home Screen", prefs.autoAddNewApps) { prefs.autoAddNewApps = it },
             row("Change Wallpaper") {
                 runCatching { startActivity(Intent.createChooser(Intent(Intent.ACTION_SET_WALLPAPER), "Wallpaper")) }

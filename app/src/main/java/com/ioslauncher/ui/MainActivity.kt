@@ -76,6 +76,26 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     private var resumed = false
 
     private lateinit var statusMonitor: DeviceStatusMonitor
+    private var lastLightX = 0f; private var lastLightY = 0f
+    private val parallax by lazy {
+        TiltParallax(this) { tx, ty ->
+            if (!built || drag.dragging) return@TiltParallax
+            val max = dimens.pt(7f)
+            // Icons drift against the wallpaper.
+            pager.translationX = tx * max
+            pager.translationY = ty * max
+            Glass.setLight(tx, ty)
+            if (kotlin.math.abs(tx - lastLightX) + kotlin.math.abs(ty - lastLightY) > 0.04f) {
+                lastLightX = tx; lastLightY = ty
+                invalidateVisibleGlass()
+            }
+        }
+    }
+
+    private fun invalidateVisibleGlass() {
+        dock.invalidate(); indicator.invalidate(); searchButton?.invalidate()
+        homePages.getOrNull(pager.currentPage)?.folderViews?.forEach { it.invalidate() }
+    }
 
     private val appsListener: (List<AppInfo>) -> Unit = { apps -> onAppsChanged(apps) }
     private val iconListener: () -> Unit = { reloadIcons() }
@@ -178,10 +198,12 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             recreate()
             return
         }
+        if (launcher.prefs.parallax) parallax.start()
         val access = android.os.Environment.isExternalStorageManager()
         if (access != storageAccess) { storageAccess = access; Glass.load(this, dimens.width, dimens.height) }
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (pendingUnlock && !keyguard.isKeyguardLocked) {
+            unlockDelays.clear()
             playUnlock()
         } else if (returningFromApp) {
             playReturnFromApp()
@@ -192,6 +214,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
 
     override fun onPause() {
         super.onPause()
+        parallax.stop()
         resumed = false
     }
 
@@ -657,58 +680,91 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         return buildList { pv.statusView?.let { add(it) }; addAll(pv.itemViews) }
     }
 
-    /** Called while the screen is off: put icons in their "outside the screen, zoomed" start state. */
+    private val unlockDelays = mutableListOf<Runnable>()
+    private val unlockStart = HashMap<View, FloatArray>()   // view → (startDelayMs)
+
+    /**
+     * Called while the screen is off: every icon / folder / widget is parked beyond the nearest screen
+     * edge (pushed outward from the screen centre), slightly enlarged, on its own layer.
+     */
     private fun prepareUnlock() {
         if (unlockPrepared) return
         unlockPrepared = true
-        unlockViews.clear()
-        val cx = dimens.width / 2f
-        val cy = dimens.height / 2f
-        for (v in unlockTargets()) {
+        unlockViews.clear(); unlockStart.clear()
+        val w = dimens.width.toFloat(); val h = dimens.height.toFloat()
+        val cx = w / 2f; val cy = h * 0.45f
+        val targets = unlockTargets()
+        val loc = IntArray(2)
+        val centers = targets.map { v ->
             v.animate().cancel()
-            v.translationX = 0f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f
-            val loc = IntArray(2); v.getLocationOnScreen(loc)
-            val vx = loc[0] + v.width / 2f
-            val vy = loc[1] + v.height / 2f
-            v.translationX = (vx - cx) * 0.55f
-            v.translationY = (vy - cy) * 0.55f
-            v.scaleX = 1.7f; v.scaleY = 1.7f
-            v.alpha = 0f
+            v.translationX = 0f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f; v.alpha = 1f
+            v.getLocationOnScreen(loc)
+            Triple(v, loc[0] + v.width / 2f, loc[1] + v.height / 2f)
+        }
+        val minY = centers.minOfOrNull { it.third } ?: 0f
+        val maxY = centers.maxOfOrNull { it.third } ?: 1f
+        for ((v, vx, vy) in centers) {
+            var dx = vx - cx; var dy = vy - cy
+            val len = kotlin.math.hypot(dx, dy).coerceAtLeast(1f)
+            dx /= len; dy /= len
+            if (len < 2f) { dx = 0f; dy = -1f }
+            // Distance needed to leave the screen along that direction, plus a margin.
+            val tx = if (dx > 0) (w - vx) / dx else if (dx < 0) -vx / dx else Float.MAX_VALUE
+            val ty = if (dy > 0) (h - vy) / dy else if (dy < 0) -vy / dy else Float.MAX_VALUE
+            val out = minOf(tx, ty) + maxOf(v.width, v.height) * 0.9f + dimens.pt(30f)
+            v.translationX = dx * out
+            v.translationY = dy * out
+            v.scaleX = 1.22f; v.scaleY = 1.22f
+            // Rows land one after another (top first), with a hint of column ripple.
+            val rowT = if (maxY > minY) (vy - minY) / (maxY - minY) else 0f
+            val colT = kotlin.math.abs(vx - w / 2f) / (w / 2f)
+            unlockStart[v] = floatArrayOf(rowT * 190f + colT * 40f)
             unlockViews += v
         }
         dock.animate().cancel()
-        dock.translationY = dimens.dockHeight * 0.7f
-        dock.scaleX = 1.15f; dock.scaleY = 1.15f
-        dock.alpha = 0f
+        dock.translationY = dimens.dockHeight + dimens.dockBottom + dimens.pt(60f)
+        dock.scaleX = 1.08f; dock.scaleY = 1.08f
+        dock.alpha = dockTargetAlpha()
         bottomBar.forEach { it.alpha = 0f }
     }
 
-    /** iOS unlock: icons fly in from beyond the screen edges, shrinking into place with a soft spring. */
+    /**
+     * iOS 26-style unlock: icons fly in from the screen edges, staggered row by row, and land with a
+     * slight spring bounce; the dock rises from below on its own layer; then parallax takes over.
+     */
     private fun playUnlock() {
         pendingUnlock = false
         if (!unlockPrepared) return
         unlockPrepared = false
         for (v in unlockViews) {
-            spring(v, DynamicAnimation.TRANSLATION_X, 0f)
-            spring(v, DynamicAnimation.TRANSLATION_Y, 0f)
-            spring(v, DynamicAnimation.SCALE_X, 1f)
-            spring(v, DynamicAnimation.SCALE_Y, 1f)
-            v.animate().alpha(1f).setDuration(260).start()
+            val delay = (unlockStart[v]?.get(0) ?: 0f).toLong()
+            val r = Runnable {
+                spring(v, DynamicAnimation.TRANSLATION_X, 0f, 230f, 0.68f)
+                spring(v, DynamicAnimation.TRANSLATION_Y, 0f, 230f, 0.68f)
+                spring(v, DynamicAnimation.SCALE_X, 1f, 260f, 0.62f)
+                spring(v, DynamicAnimation.SCALE_Y, 1f, 260f, 0.62f)
+            }
+            unlockDelays += r
+            root.postDelayed(r, delay)
         }
-        unlockViews.clear()
-        spring(dock, DynamicAnimation.TRANSLATION_Y, dockTargetTY())
-        spring(dock, DynamicAnimation.SCALE_X, 1f)
-        spring(dock, DynamicAnimation.SCALE_Y, 1f)
-        dock.animate().alpha(dockTargetAlpha()).setDuration(260).start()
-        bottomBar.forEach { it.animate().alpha(1f - libProgress).setStartDelay(180).setDuration(250).start() }
+        unlockViews.clear(); unlockStart.clear()
+        val dockRun = Runnable {
+            spring(dock, DynamicAnimation.TRANSLATION_Y, dockTargetTY(), 240f, 0.7f)
+            spring(dock, DynamicAnimation.SCALE_X, 1f, 260f, 0.65f)
+            spring(dock, DynamicAnimation.SCALE_Y, 1f, 260f, 0.65f)
+        }
+        unlockDelays += dockRun
+        root.postDelayed(dockRun, 140)
+        bottomBar.forEach { it.animate().alpha(1f - libProgress).setStartDelay(320).setDuration(260).start() }
     }
 
     private fun cancelUnlock() {
         pendingUnlock = false
+        unlockDelays.forEach { root.removeCallbacks(it) }; unlockDelays.clear()
         if (!unlockPrepared) return
         unlockPrepared = false
         for (v in unlockViews) { v.translationX = 0f; v.translationY = 0f; v.scaleX = 1f; v.scaleY = 1f; v.alpha = 1f }
-        unlockViews.clear()
+        unlockViews.clear(); unlockStart.clear()
         dock.translationY = dockTargetTY()
         dock.scaleX = 1f; dock.scaleY = 1f; dock.alpha = dockTargetAlpha()
         bottomBar.forEach { it.alpha = 1f - libProgress }
@@ -727,10 +783,10 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         pager.animate().alpha(1f).setDuration(220).start()
     }
 
-    private fun spring(v: View, prop: DynamicAnimation.ViewProperty, target: Float, stiffness: Float = 190f) {
+    private fun spring(v: View, prop: DynamicAnimation.ViewProperty, target: Float, stiffness: Float = 190f, damping: Float = 0.83f) {
         SpringAnimation(v, prop, target).apply {
             spring.stiffness = stiffness
-            spring.dampingRatio = 0.83f
+            spring.dampingRatio = damping
             start()
         }
     }

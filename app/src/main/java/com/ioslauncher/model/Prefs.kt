@@ -76,6 +76,11 @@ class Prefs(context: Context) {
         get() = sp.getFloat("glass_shine", 1f)
         set(v) = sp.edit { putFloat("glass_shine", v) }
 
+    /** Tilt parallax of icons + glass shine following the tilt. */
+    var parallax: Boolean
+        get() = sp.getBoolean("parallax", true)
+        set(v) = sp.edit { putBoolean("parallax", v) }
+
     var autoAddNewApps: Boolean
         get() = sp.getBoolean("auto_add", true)
         set(v) = sp.edit { putBoolean("auto_add", v) }
