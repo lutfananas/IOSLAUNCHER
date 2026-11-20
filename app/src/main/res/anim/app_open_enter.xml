@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App window fades in once the launcher's expanding card already covers the screen. -->
+<alpha xmlns:android="http://schemas.android.com/apk/res/android"
+    android:fromAlpha="0" android:toAlpha="1"
+    android:startOffset="230" android:duration="170"
+    android:interpolator="@android:interpolator/decelerate_quad" />

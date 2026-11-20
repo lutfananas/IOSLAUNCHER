@@ -20,7 +20,7 @@ class CloseToIconView(context: Context, private val from: RectF, private val to:
     var progress = 0f
         set(v) { field = v; invalidate() }
 
-    private val color = averageColor(icon)
+    private val color = backgroundColor(icon)
     private val cardPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val iconPaint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val shadow = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -63,6 +63,16 @@ class CloseToIconView(context: Context, private val from: RectF, private val to:
     }
 
     companion object {
+        /**
+         * The colour behind the icon artwork — what apps use for their splash background (WhatsApp:
+         * green). Sampled just inside the left edge; falls back to the average colour for odd shapes.
+         */
+        fun backgroundColor(b: Bitmap): Int {
+            val x = (b.width * 0.07f).toInt(); val y = b.height / 2
+            val c = b.getPixel(x.coerceIn(0, b.width - 1), y)
+            return if (Color.alpha(c) > 220) (c or 0xFF000000.toInt()) else averageColor(b)
+        }
+
         /** Opaque average colour of the icon (alpha-weighted), used for the shrinking card. */
         fun averageColor(b: Bitmap): Int {
             val small = Bitmap.createScaledBitmap(b, 16, 16, true)

@@ -204,6 +204,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
 
     override fun onStop() {
         super.onStop()
+        clearOpenCard()
         if (closeSearchOnStop) {
             closeSearchOnStop = false
             overlays.filterIsInstance<SearchOverlay>().forEach { it.hideKeyboard(); removeOverlay(it) }
@@ -224,6 +225,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
             recreate()
             return
         }
+        clearOpenCard()
         if (launcher.prefs.parallax) parallax.start()
         val access = android.os.Environment.isExternalStorageManager()
         if (access != storageAccess) { storageAccess = access; Glass.load(this, dimens.width, dimens.height) }
@@ -556,7 +558,14 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     override fun launchApp(view: View, app: AppInfo, iconBounds: Rect?) {
         val la = getSystemService(LauncherApps::class.java)
         val bounds = iconBounds ?: Rect(dimens.width / 2, dimens.height / 2, dimens.width / 2 + 1, dimens.height / 2 + 1)
-        val opts = ActivityOptions.makeScaleUpAnimation(root, bounds.left, bounds.top, bounds.width(), bounds.height())
+        // iOS-style open: our own card expands from the icon to full screen in the app's colour with its
+        // icon centred (matching the app's splash screen), and the app window fades in on top of it.
+        val iconView = view as? AppIconView
+        val bmp = iconView?.bitmap ?: launcher.icons.cached(app, dimens.iconSize) ?: runCatching { launcher.icons.loadSync(app, dimens.iconSize) }.getOrNull()
+        if (bmp != null && iconBounds != null) playOpenFromIcon(bmp, bounds, iconView?.takeIf { it.source == IconSource.HOME || it.source == IconSource.DOCK })
+        val opts = if (bmp != null && iconBounds != null)
+            ActivityOptions.makeCustomAnimation(this, com.ioslauncher.R.anim.app_open_enter, com.ioslauncher.R.anim.launcher_hold)
+        else ActivityOptions.makeScaleUpAnimation(root, bounds.left, bounds.top, bounds.width(), bounds.height())
         // Icon splash while the app starts, instead of an empty window that reads as a blink.
         if (android.os.Build.VERSION.SDK_INT >= 33) opts.setSplashScreenStyle(android.window.SplashScreen.SPLASH_SCREEN_STYLE_ICON)
         try {
@@ -976,6 +985,34 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
 
     private var lastLaunchKey: String? = null
     private var closeAnim: CloseToIconView? = null
+    private var openCard: CloseToIconView? = null
+    private var openHiddenIcon: View? = null
+
+    /** Card grows from the icon to full screen (reverse of [playCloseToIcon]). */
+    private fun playOpenFromIcon(bmp: android.graphics.Bitmap, iconRect: Rect, hide: View?) {
+        clearOpenCard()
+        val card = CloseToIconView(this, android.graphics.RectF(0f, 0f, dimens.width.toFloat(), dimens.height.toFloat()), iconRect, bmp)
+        card.progress = 1f
+        root.addView(card, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+        openCard = card
+        hide?.alpha = 0f
+        openHiddenIcon = hide
+        android.animation.ValueAnimator.ofFloat(1f, 0f).apply {
+            duration = 340
+            interpolator = android.view.animation.PathInterpolator(0.2f, 0.85f, 0.25f, 1f)
+            addUpdateListener { card.progress = it.animatedValue as Float }
+            start()
+        }
+        // Safety net if the app never comes up (e.g. it crashed on start).
+        root.postDelayed({ if (openCard === card && resumed) clearOpenCard() }, 2500)
+    }
+
+    private fun clearOpenCard() {
+        openCard?.let { root.removeView(it) }
+        openCard = null
+        openHiddenIcon?.alpha = 1f
+        openHiddenIcon = null
+    }
 
     /**
      * Closing an app (swipe up / back / home): it shrinks back into its icon on the grid or dock.
