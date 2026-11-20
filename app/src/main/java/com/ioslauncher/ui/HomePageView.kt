@@ -318,6 +318,8 @@ class DockView(context: Context, private val host: LauncherHost) : ViewGroup(con
 class PageIndicator(context: Context) : View(context) {
     var count = 1; set(v) { field = v; invalidate() }
     var position = 0f; set(v) { field = v; invalidate() }
+    /** Glass capsule behind the dots (off when there's no dock: plain dots only). */
+    var capsule = true; set(v) { field = v; invalidate() }
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val dm = context.resources.displayMetrics.density
     private val path = Path()
@@ -330,12 +332,42 @@ class PageIndicator(context: Context) : View(context) {
         val start = width / 2f - total / 2f
         val capH = 20f * dm
         val cap = RectF(start - 11f * dm, height / 2f - capH / 2, start + total + 11f * dm, height / 2f + capH / 2)
-        Glass.drawRect(canvas, this, cap, capH / 2, Color.argb(20, 255, 255, 255), false, path)
+        if (capsule) Glass.drawRect(canvas, this, cap, capH / 2, Color.argb(20, 255, 255, 255), false, path)
         for (i in 0 until count) {
             val dist = kotlin.math.abs(position - i).coerceAtMost(1f)
             paint.color = Color.WHITE
             paint.alpha = (255 * (1f - 0.6f * dist)).toInt()
             canvas.drawCircle(start + i * gap, height / 2f, r, paint)
         }
+    }
+}
+
+
+/** Round Liquid Glass search button (bottom-right when the dock is off). Loupe is white, black in dark mode. */
+class SearchButton(context: Context) : View(context) {
+    private val path = Path()
+    private val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+
+    init {
+        isClickable = true
+        isFocusable = true
+        contentDescription = "Search"
+    }
+
+    private fun isDark() = (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+        android.content.res.Configuration.UI_MODE_NIGHT_YES
+
+    override fun onDraw(canvas: Canvas) {
+        val s = minOf(width, height).toFloat()
+        val r = RectF((width - s) / 2f, (height - s) / 2f, (width + s) / 2f, (height + s) / 2f)
+        Glass.drawRect(canvas, this, r, s / 2f, Color.argb(if (isPressed) 60 else 26, 255, 255, 255), true, path)
+        glyph.color = if (isDark()) Color.BLACK else Color.WHITE
+        SearchPill.drawMagnifier(canvas, r.centerX(), r.centerY(), s * 0.42f, glyph)
+    }
+
+    override fun drawableStateChanged() { super.drawableStateChanged(); invalidate() }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration?) {
+        super.onConfigurationChanged(newConfig); invalidate()
     }
 }

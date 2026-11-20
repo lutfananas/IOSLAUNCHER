@@ -35,7 +35,9 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
     val dockBottom = bottomInset.coerceAtLeast((8 * pt).roundToInt()) + (4 * pt).roundToInt()
     val dockTop = height - dockBottom - dockHeight
 
-    val indicatorHeight = (30 * pt).roundToInt()
+    /** Without a dock the bottom row is taller: page dots + the round glass search button. */
+    val indicatorHeight = (if (dockEnabled) 30 * pt else 58 * pt).roundToInt()
+    val searchButtonSize = (46 * pt).roundToInt()
     val gridTop = topInset.coerceAtLeast((24 * pt).roundToInt()) + (14 * pt).roundToInt()
     val gridBottom = (if (dockEnabled) dockTop else height - dockBottom) - indicatorHeight
     val cellHeight = (gridBottom - gridTop) / rows

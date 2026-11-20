@@ -46,6 +46,9 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
     val homePages = mutableListOf<HomePageView>()
     private lateinit var library: AppLibraryView
     private lateinit var indicator: PageIndicator
+    private var searchButton: SearchButton? = null
+    /** Views that fade with the page dots (dots + search button). */
+    private val bottomBar get() = listOfNotNull<View>(indicator, searchButton)
     private lateinit var doneButton: TextView
     private lateinit var settingsButton: TextView
     private val overlays = mutableListOf<Overlay>()
@@ -238,6 +241,17 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         root.addView(indicator, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, dimens.indicatorHeight, Gravity.BOTTOM).apply {
             bottomMargin = dimens.dockBottom + dimens.dockHeight
         })
+        indicator.capsule = dimens.dockEnabled
+        if (!dimens.dockEnabled) {
+            val sb = SearchButton(this)
+            sb.setOnClickListener { openSearch() }
+            val size = dimens.searchButtonSize
+            root.addView(sb, FrameLayout.LayoutParams(size, size, Gravity.BOTTOM or Gravity.END).apply {
+                bottomMargin = dimens.dockBottom + (dimens.indicatorHeight - size) / 2
+                rightMargin = dimens.sidePadding + (dimens.cellWidth - size) / 2
+            })
+            searchButton = sb
+        }
         Glass.load(this, width, height)
 
         dock = DockView(this, this)
@@ -328,8 +342,10 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         if (!unlockPrepared) {
             dock.translationY = libProgress * (dimens.dockHeight + dimens.dockBottom)
             dock.alpha = 1f - libProgress
-            indicator.alpha = 1f - libProgress
+            bottomBar.forEach { it.alpha = 1f - libProgress }
         }
+        // Don't let the invisible search button catch taps on the App Library.
+        searchButton?.visibility = if (libProgress > 0.98f) View.INVISIBLE else View.VISIBLE
         indicator.position = position
         // Glass on moving pages must re-sample the (static) wallpaper.
         val lo = kotlin.math.floor(position).toInt(); val hi = kotlin.math.ceil(position).toInt()
@@ -643,7 +659,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         dock.translationY = dimens.dockHeight * 0.7f
         dock.scaleX = 1.15f; dock.scaleY = 1.15f
         dock.alpha = 0f
-        indicator.alpha = 0f
+        bottomBar.forEach { it.alpha = 0f }
     }
 
     /** iOS unlock: icons fly in from beyond the screen edges, shrinking into place with a soft spring. */
@@ -664,7 +680,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         spring(dock, DynamicAnimation.SCALE_X, 1f)
         spring(dock, DynamicAnimation.SCALE_Y, 1f)
         dock.animate().alpha(1f - libProgress).setDuration(260).start()
-        indicator.animate().alpha(1f - libProgress).setStartDelay(180).setDuration(250).start()
+        bottomBar.forEach { it.animate().alpha(1f - libProgress).setStartDelay(180).setDuration(250).start() }
     }
 
     private fun cancelUnlock() {
@@ -675,7 +691,7 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         unlockViews.clear()
         dock.translationY = libProgress * (dimens.dockHeight + dimens.dockBottom)
         dock.scaleX = 1f; dock.scaleY = 1f; dock.alpha = 1f - libProgress
-        indicator.alpha = 1f - libProgress
+        bottomBar.forEach { it.alpha = 1f - libProgress }
     }
 
     /** Coming back from an app: the home screen settles back from a slight zoom, like iOS. */
