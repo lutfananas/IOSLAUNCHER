@@ -400,6 +400,51 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
         })
 
         filter("")
+
+        // Suggestions follow the keyboard: they melt away as it rises and flow back as it closes.
+        setWindowInsetsAnimationCallback(object : android.view.WindowInsetsAnimation.Callback(DISPATCH_MODE_CONTINUE_ON_SUBTREE) {
+            override fun onProgress(insets: WindowInsets, running: MutableList<android.view.WindowInsetsAnimation>): WindowInsets {
+                val ime = insets.getInsets(WindowInsets.Type.ime()).bottom
+                val max = (d.height * 0.38f).coerceAtLeast(1f)
+                setKeyboardFraction((ime / max).coerceIn(0f, 1f))
+                return insets
+            }
+        })
+        setOnApplyWindowInsetsListener { _, insets ->
+            val visible = insets.isVisible(WindowInsets.Type.ime())
+            animateKeyboardFraction(if (visible) 1f else 0f)
+            insets
+        }
+    }
+
+    private var kbFraction = 0f
+    private var kbAnim: android.animation.ValueAnimator? = null
+
+    /** 0 = keyboard hidden (suggestions fully shown), 1 = keyboard up (suggestions gone). */
+    private fun setKeyboardFraction(f: Float) {
+        kbAnim?.cancel()
+        applyKeyboardFraction(f)
+    }
+
+    private fun animateKeyboardFraction(target: Float) {
+        if (kotlin.math.abs(target - kbFraction) < 0.01f) return
+        kbAnim?.cancel()
+        kbAnim = android.animation.ValueAnimator.ofFloat(kbFraction, target).apply {
+            duration = 340; interpolator = HomePageView.EASE
+            addUpdateListener { applyKeyboardFraction(it.animatedValue as Float) }
+            start()
+        }
+    }
+
+    private fun applyKeyboardFraction(f: Float) {
+        kbFraction = f
+        val e = f * f * (3 - 2 * f)                     // smoothstep for a liquid feel
+        for (v in listOf<View>(suggestions, suggestionsTitle)) {
+            v.alpha = 1f - e
+            v.translationY = e * d.pt(46f)
+            v.scaleX = 1f - 0.08f * e; v.scaleY = 1f - 0.08f * e
+        }
+        suggestions.pivotY = 0f; suggestions.pivotX = suggestions.width / 2f
     }
 
     private fun letterOf(app: AppInfo): String {
@@ -453,11 +498,11 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
 }
 
 /**
- * Two-row 3D icon drum. Apps sit on the outside of a horizontal cylinder (column-major: two apps per
- * column) and the whole drum spins as you swipe. Each icon is a real perspective-projected quad
- * (Matrix.setPolyToPoly), drawn back-to-front with depth fading, a floor glow, a mirrored reflection
- * under the bottom row and labels that fade as icons turn away. Swipes have momentum and the drum
- * snaps to a column with a small overshoot.
+ * 3D tile carousel. Apps are grouped as one big tile + two small tiles stacked beside it (like a
+ * gallery widget); the small ones form the two rows. Groups sit on a slightly tilted drum and turn in
+ * real perspective (Matrix.setPolyToPoly per tile). Every tile is a thick glossy slab: an extruded,
+ * darker edge built from depth slices of the icon itself, a gloss highlight and a bright rim, plus a
+ * floor glow and a mirrored reflection. Swipes spin the drum with momentum and snap with a bounce.
  */
 class IconDrum(context: Context, private val d: Dimens) : View(context) {
     var onLaunch: (AppInfo, Rect) -> Unit = { _, _ -> }
@@ -466,89 +511,117 @@ class IconDrum(context: Context, private val d: Dimens) : View(context) {
     var onFocusChanged: (AppInfo?) -> Unit = {}
 
     private var apps: List<AppInfo> = emptyList()
-    private val bitmaps = HashMap<String, Bitmap>()
-    private val icon = d.pt(74f)                     // front icon size
-    private val rowGap = d.pt(44f)                   // gap between the two rows
-    private val stepDeg = 30f                        // angle between columns (tighter drum = stronger 3D)
-    private val radius = (icon + d.pt(16f)) / (2f * kotlin.math.sin(Math.toRadians(stepDeg / 2.0)).toFloat())
-    private val focal = d.pt(460f)                   // perspective strength
-    private val tilt = Math.toRadians(12.0)          // camera looks slightly down onto the drum
+    private val glossy = HashMap<String, Bitmap>()
+
+    private val big = d.pt(100f)                     // big tile side
+    private val gap = d.pt(9f)
+    private val small = (big - gap) / 2f              // small tile side (two stacked = big)
+    private val groupW = big + gap + small
+    private val stepDeg = 38f                         // angle between groups on the drum
+    private val radius = (groupW + d.pt(26f)) / (2f * kotlin.math.sin(Math.toRadians(stepDeg / 2.0)).toFloat())
+    private val focal = d.pt(440f)
+    private val tilt = Math.toRadians(10.0)
     private val cosT = kotlin.math.cos(tilt).toFloat()
     private val sinT = kotlin.math.sin(tilt).toFloat()
-    private val iconPx = icon.toInt()
+    private val bitmapPx = big.toInt()
 
-    /** Column at the front, fractional while spinning. */
-    private var pos = 0f
-    private var lastFocusCol = -1
+    private var pos = 0f                              // front group, fractional while spinning
+    private var lastFocus = -1
     private var anim: android.animation.ValueAnimator? = null
     private var introT = 1f
 
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
     private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE; textAlign = Paint.Align.CENTER
-        typeface = Typeface.create(Typeface.DEFAULT, 500, false)
+        typeface = Typeface.create(Typeface.DEFAULT, 600, false)
         setShadowLayer(6f, 0f, 1f, Color.argb(90, 0, 0, 0))
     }
     private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fadePaint = Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN) }
     private val m = android.graphics.Matrix()
     private val src = FloatArray(8)
-    private val dst = FloatArray(8)
+    private val tmp = FloatArray(8)
 
-    private data class Item(val index: Int, val app: AppInfo, val z: Float, val quad: FloatArray, val facing: Float, val row: Int, val col: Int)
-    private var drawn: List<Item> = emptyList()
+    private class Tile(val index: Int, val app: AppInfo, val group: Int, val isBig: Boolean,
+                       val cx: Float, val cy: Float, val cz: Float, val s: Float, val c: Float, val half: Float) {
+        val quad = FloatArray(8)
+    }
+    private var drawn: List<Tile> = emptyList()
 
-    fun preferredHeight() = (2 * icon + rowGap + d.pt(96f)).toInt()
+    fun preferredHeight() = (big + d.pt(118f)).toInt()
 
-    private val columns get() = (apps.size + 1) / 2
+    private val groups get() = (apps.size + 2) / 3
 
     fun setApps(list: List<AppInfo>) {
         apps = list
         anim?.cancel()
-        pos = 0f; lastFocusCol = -1
-        val want = list.take(80).map { it.key }.toSet()
-        bitmaps.keys.retainAll(want)
-        list.take(80).forEach { load(it) }
+        pos = 0f; lastFocus = -1
+        val want = list.take(90).map { it.key }.toSet()
+        glossy.keys.retainAll(want)
+        list.take(90).forEach { load(it) }
         notifyFocus()
         invalidate()
     }
 
     private fun load(a: AppInfo) {
-        if (bitmaps.containsKey(a.key)) return
-        LauncherApp.instance.icons.load(a, iconPx) { b -> bitmaps[a.key] = b; invalidate() }
+        if (glossy.containsKey(a.key)) return
+        LauncherApp.instance.icons.load(a, bitmapPx) { b -> glossy[a.key] = makeGlossy(b); invalidate() }
     }
 
-    fun focusedApp(): AppInfo? = apps.getOrNull(Math.round(pos).coerceAtLeast(0) * 2)
+    /** Icon + gloss sheet on the upper half + bright specular rim, all inside the squircle. */
+    private fun makeGlossy(src: Bitmap): Bitmap {
+        val out = src.copy(Bitmap.Config.ARGB_8888, true)
+        val c = Canvas(out)
+        val w = out.width.toFloat(); val h = out.height.toFloat()
+        val gp = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.SRC_ATOP)
+            shader = android.graphics.LinearGradient(0f, 0f, w * 0.35f, h * 0.75f,
+                intArrayOf(Color.argb(120, 255, 255, 255), Color.argb(30, 255, 255, 255), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.45f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        }
+        c.drawRect(0f, 0f, w, h, gp)
+        val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = w * 0.025f
+            shader = android.graphics.LinearGradient(0f, 0f, w, h,
+                intArrayOf(Color.argb(220, 255, 255, 255), Color.argb(40, 255, 255, 255), Color.argb(140, 255, 255, 255)),
+                floatArrayOf(0f, 0.5f, 1f), android.graphics.Shader.TileMode.CLAMP)
+        }
+        val inset = rim.strokeWidth / 2f
+        c.drawPath(IosShape.roundRect(RectF(inset, inset, w - inset, h - inset), (w - 2 * inset) * IosShape.ICON_CORNER_RATIO), rim)
+        return out
+    }
+
+    fun focusedApp(): AppInfo? = apps.getOrNull(Math.round(pos).coerceAtLeast(0) * 3)
 
     fun scrollToItem(index: Int, animate: Boolean) {
-        val col = (index / 2).toFloat()
-        if (animate) animateTo(col, 520) else { pos = col; invalidate(); notifyFocus() }
+        val g = (index / 3).toFloat()
+        if (animate) animateTo(g, 520) else { pos = g; invalidate(); notifyFocus() }
     }
 
     fun playIntro() {
         introT = 0f
         android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 700; interpolator = android.view.animation.OvershootInterpolator(0.9f)
+            duration = 750; interpolator = android.view.animation.OvershootInterpolator(0.9f)
             addUpdateListener { introT = it.animatedValue as Float; invalidate() }
             start()
         }
     }
 
     private fun notifyFocus() {
-        val c = Math.round(pos)
-        if (c != lastFocusCol) {
-            if (lastFocusCol != -1) performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
-            lastFocusCol = c
+        val g = Math.round(pos)
+        if (g != lastFocus) {
+            if (lastFocus != -1) performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            lastFocus = g
             onFocusChanged(focusedApp())
         }
     }
 
     private fun animateTo(target: Float, duration: Long) {
         anim?.cancel()
-        val t = target.coerceIn(0f, (columns - 1).coerceAtLeast(0).toFloat())
+        val t = target.coerceIn(0f, (groups - 1).coerceAtLeast(0).toFloat())
         anim = android.animation.ValueAnimator.ofFloat(pos, t).apply {
             this.duration = duration
-            interpolator = android.view.animation.OvershootInterpolator(1.05f)
+            interpolator = android.view.animation.OvershootInterpolator(1.1f)
             addUpdateListener { pos = it.animatedValue as Float; notifyFocus(); invalidate() }
             start()
         }
@@ -556,8 +629,9 @@ class IconDrum(context: Context, private val d: Dimens) : View(context) {
 
     // ---- projection --------------------------------------------------------------------------
 
+    private fun centerY() = d.pt(20f) + big / 2f
+
     private fun project(x: Float, y: Float, z: Float, out: FloatArray, o: Int) {
-        // Tilt the drum about its own axis (z = radius) so the far side rises, then perspective-divide.
         val zr = z - radius
         val y2 = y * cosT - zr * sinT
         val z2 = y * sinT + zr * cosT + radius * cosT
@@ -566,107 +640,118 @@ class IconDrum(context: Context, private val d: Dimens) : View(context) {
         out[o + 1] = centerY() + y2 * p
     }
 
-    private fun centerY() = icon / 2f + d.pt(18f) + rowGap / 2f + icon / 2f
+    /** Quad of a tile, pushed [depth] behind its face (along the inward normal). */
+    private fun quadOf(t: Tile, depth: Float, out: FloatArray) {
+        val h = t.half
+        val x = t.cx - t.s * depth; val z = t.cz + t.c * depth
+        project(x - t.c * h, t.cy - h, z - t.s * h, out, 0)
+        project(x + t.c * h, t.cy - h, z + t.s * h, out, 2)
+        project(x + t.c * h, t.cy + h, z + t.s * h, out, 4)
+        project(x - t.c * h, t.cy + h, z - t.s * h, out, 6)
+    }
 
     override fun onDraw(canvas: Canvas) {
         if (apps.isEmpty()) return
-        val items = ArrayList<Item>()
-        val spin = (1f - introT) * 3.5f                       // intro: drum spins into place
-        val first = (pos - 5).toInt().coerceAtLeast(0)
-        val last = (pos + 5).toInt().coerceAtMost(columns - 1)
-        val h = icon / 2f
-        for (col in first..last) {
-            val thetaDeg = (col - pos - spin) * stepDeg
-            if (kotlin.math.abs(thetaDeg) > 80f) continue
+        val spin = (1f - introT) * 2.5f
+        val tiles = ArrayList<Tile>()
+        val first = (pos - 4).toInt().coerceAtLeast(0)
+        val last = (pos + 4).toInt().coerceAtMost(groups - 1)
+        for (g in first..last) {
+            val thetaDeg = (g - pos - spin) * stepDeg
+            if (kotlin.math.abs(thetaDeg) > 78f) continue
             val th = Math.toRadians(thetaDeg.toDouble())
             val s = kotlin.math.sin(th).toFloat(); val c = kotlin.math.cos(th).toFloat()
-            val cx = radius * s
-            val cz = radius * (1 - c)
-            for (row in 0..1) {
-                val idx = col * 2 + row
-                val a = apps.getOrNull(idx) ?: continue
-                val cy = if (row == 0) -rowGap / 2f - h else rowGap / 2f + h
-                val q = FloatArray(8)
-                // Corners: tangent half-vector (c, 0, s)·h  and vertical ±h.
-                project(cx - c * h, cy - h, cz - s * h, q, 0)
-                project(cx + c * h, cy - h, cz + s * h, q, 2)
-                project(cx + c * h, cy + h, cz + s * h, q, 4)
-                project(cx - c * h, cy + h, cz - s * h, q, 6)
-                items += Item(idx, a, cz, q, c, row, col)
+            val gx = radius * s; val gz = radius * (1 - c)
+            // Group layout on its own plane: big tile left, two small tiles stacked on the right.
+            fun place(i: Int, u: Float, v: Float, half: Float, isBig: Boolean) {
+                val a = apps.getOrNull(i) ?: return
+                tiles += Tile(i, a, g, isBig, gx + c * u, v, gz + s * u, s, c, half)
             }
+            place(g * 3, -groupW / 2f + big / 2f, 0f, big / 2f, true)
+            place(g * 3 + 1, groupW / 2f - small / 2f, -(gap / 2f + small / 2f), small / 2f, false)
+            place(g * 3 + 2, groupW / 2f - small / 2f, gap / 2f + small / 2f, small / 2f, false)
         }
-        items.sortByDescending { it.z }
-        drawn = items
+        tiles.forEach { quadOf(it, 0f, it.quad) }
+        tiles.sortByDescending { it.cz }
+        drawn = tiles
 
-        // Floor glow under the drum, just below the front bottom icon.
-        val front = items.filter { it.row == 1 }.minByOrNull { it.z }
-        val floorY = front?.let { maxOf(it.quad[5], it.quad[7]) + d.pt(2f) } ?: (centerY() + rowGap / 2f + icon)
-        glowPaint.shader = android.graphics.RadialGradient(width / 2f, floorY, width * 0.45f,
-            Color.argb(70, 255, 255, 255), Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP)
-        canvas.save(); canvas.scale(1f, 0.16f, width / 2f, floorY)
-        canvas.drawCircle(width / 2f, floorY, width * 0.45f, glowPaint)
+        val bottomFront = tiles.minByOrNull { it.cz }?.let { maxOf(it.quad[5], it.quad[7]) } ?: (centerY() + big / 2f)
+        val floorY = bottomFront + d.pt(4f)
+        // Floor glow.
+        glowPaint.shader = android.graphics.RadialGradient(width / 2f, floorY, width * 0.42f,
+            Color.argb(80, 255, 255, 255), Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP)
+        canvas.save(); canvas.scale(1f, 0.15f, width / 2f, floorY)
+        canvas.drawCircle(width / 2f, floorY, width * 0.42f, glowPaint)
         canvas.restore()
-
-        // Reflections of the bottom row (faded with a vertical mask).
-        val reflTop = floorY - d.pt(4f)
-        val reflH = icon * 0.55f
-        val layer = canvas.saveLayer(0f, reflTop, width.toFloat(), reflTop + reflH, null)
-        for (it in items) {
-            if (it.row != 1 || it.facing < 0.2f) continue
-            val b = bitmaps[it.app.key] ?: continue
-            val q = it.quad
-            // Mirror the quad about its bottom edge.
-            dst[0] = q[6]; dst[1] = q[7]; dst[2] = q[4]; dst[3] = q[5]
-            dst[4] = q[2]; dst[5] = 2 * q[5] - q[3]; dst[6] = q[0]; dst[7] = 2 * q[7] - q[1]
-            drawQuad(canvas, b, dst, (70 * it.facing).toInt())
-        }
         glowPaint.shader = null
-        fadePaint.shader = android.graphics.LinearGradient(0f, reflTop, 0f, reflTop + reflH,
+
+        // Reflection of the tiles' bottom edges.
+        val reflH = big * 0.45f
+        val layer = canvas.saveLayer(0f, floorY - d.pt(4f), width.toFloat(), floorY + reflH, null)
+        for (t in tiles) {
+            if (t.c < 0.25f || (!t.isBig && t.cy < 0)) continue
+            val b = glossy[t.app.key] ?: continue
+            val q = t.quad
+            tmp[0] = q[6]; tmp[1] = q[7]; tmp[2] = q[4]; tmp[3] = q[5]
+            tmp[4] = q[2]; tmp[5] = 2 * q[5] - q[3]; tmp[6] = q[0]; tmp[7] = 2 * q[7] - q[1]
+            drawQuad(canvas, b, tmp, (80 * t.c).toInt(), null)
+        }
+        fadePaint.shader = android.graphics.LinearGradient(0f, floorY, 0f, floorY + reflH,
             Color.argb(255, 0, 0, 0), Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP)
-        canvas.drawRect(0f, reflTop, width.toFloat(), reflTop + reflH, fadePaint)
+        canvas.drawRect(0f, floorY - d.pt(4f), width.toFloat(), floorY + reflH, fadePaint)
         canvas.restoreToCount(layer)
 
-        // Icons back-to-front, darker and fainter the further they turn away.
-        for (it in items) {
-            val b = bitmaps[it.app.key] ?: continue
-            val k = it.facing.coerceIn(0f, 1f)
-            val alpha = (255 * (0.2f + 0.8f * k * kotlin.math.sqrt(k)) * introT.coerceIn(0f, 1f)).toInt()
-            // Side icons turn away from the light: darken them.
-            val lum = (255 * (0.55f + 0.45f * k)).toInt()
-            paint.colorFilter = if (lum < 252) android.graphics.LightingColorFilter(Color.rgb(lum, lum, lum), 0) else null
-            drawQuad(canvas, b, it.quad, alpha)
-            paint.colorFilter = null
-            if (it.facing > 0.55f) {
-                val q = it.quad
-                val p = focal / (focal + it.z)
-                labelPaint.textSize = d.pt(12.5f) * p
-                labelPaint.alpha = (255 * ((it.facing - 0.55f) / 0.45f).coerceIn(0f, 1f) * introT.coerceIn(0f, 1f)).toInt()
-                val text = android.text.TextUtils.ellipsize(it.app.label, android.text.TextPaint(labelPaint), icon * 1.25f * p,
+        val fade = introT.coerceIn(0f, 1f)
+        for (t in tiles) {
+            val b = glossy[t.app.key] ?: continue
+            val k = t.c.coerceIn(0f, 1f)
+            val alpha = (255 * (0.25f + 0.75f * k) * fade).toInt()
+            // Thick slab: depth slices of the icon, darker towards the back.
+            val thick = t.half * 0.24f
+            val slices = 7
+            for (i in slices downTo 1) {
+                val depth = thick * i / slices
+                quadOf(t, depth, tmp)
+                val lum = (255 * (0.28f + 0.22f * (1f - i / slices.toFloat())) * (0.6f + 0.4f * k)).toInt().coerceIn(0, 255)
+                drawQuad(canvas, b, tmp, alpha, android.graphics.LightingColorFilter(Color.rgb(lum, lum, lum), Color.rgb(lum / 6, lum / 6, lum / 5)))
+            }
+            // Front face, slightly darker when turned away.
+            val face = (255 * (0.62f + 0.38f * k)).toInt()
+            drawQuad(canvas, b, t.quad, alpha, if (face < 252) android.graphics.LightingColorFilter(Color.rgb(face, face, face), 0) else null)
+
+            if (t.isBig && t.c > 0.55f) {
+                val q = t.quad
+                val p = focal / (focal + t.cz)
+                labelPaint.textSize = d.pt(13f) * p
+                labelPaint.alpha = (255 * ((t.c - 0.55f) / 0.45f).coerceIn(0f, 1f) * fade).toInt()
+                val text = android.text.TextUtils.ellipsize(t.app.label, android.text.TextPaint(labelPaint), groupW * p,
                     android.text.TextUtils.TruncateAt.END).toString()
-                canvas.drawText(text, (q[4] + q[6]) / 2f, maxOf(q[5], q[7]) + d.pt(15f) * p, labelPaint)
+                canvas.drawText(text, (q[4] + q[6]) / 2f + (small + gap) / 2f * p * t.c, maxOf(q[5], q[7]) + d.pt(19f) * p, labelPaint)
             }
         }
     }
 
-    private fun drawQuad(canvas: Canvas, b: Bitmap, q: FloatArray, alpha: Int) {
+    private fun drawQuad(canvas: Canvas, b: Bitmap, q: FloatArray, alpha: Int, filter: android.graphics.ColorFilter?) {
         src[0] = 0f; src[1] = 0f; src[2] = b.width.toFloat(); src[3] = 0f
         src[4] = b.width.toFloat(); src[5] = b.height.toFloat(); src[6] = 0f; src[7] = b.height.toFloat()
         m.setPolyToPoly(src, 0, q, 0, 4)
         paint.alpha = alpha.coerceIn(0, 255)
+        paint.colorFilter = filter
         canvas.drawBitmap(b, m, paint)
+        paint.colorFilter = null
     }
 
     fun iconRectOnScreen(a: AppInfo): Rect? {
-        val it = drawn.firstOrNull { x -> x.app.key == a.key } ?: return null
+        val t = drawn.firstOrNull { it.app.key == a.key } ?: return null
         val loc = IntArray(2); getLocationOnScreen(loc)
-        val q = it.quad
-        val l = minOf(q[0], q[6]); val r = maxOf(q[2], q[4]); val t = minOf(q[1], q[3]); val btm = maxOf(q[5], q[7])
-        return Rect((loc[0] + l).toInt(), (loc[1] + t).toInt(), (loc[0] + r).toInt(), (loc[1] + btm).toInt())
+        val q = t.quad
+        val l = minOf(q[0], q[6]); val r = maxOf(q[2], q[4]); val tp = minOf(q[1], q[3]); val btm = maxOf(q[5], q[7])
+        return Rect((loc[0] + l).toInt(), (loc[1] + tp).toInt(), (loc[0] + r).toInt(), (loc[1] + btm).toInt())
     }
 
-    private fun hit(x: Float, y: Float): Item? = drawn.asReversed().firstOrNull { it ->
-        val q = it.quad
-        it.facing > 0.2f && x in minOf(q[0], q[6])..maxOf(q[2], q[4]) && y in minOf(q[1], q[3])..maxOf(q[5], q[7])
+    private fun hit(x: Float, y: Float): Tile? = drawn.asReversed().firstOrNull { t ->
+        val q = t.quad
+        t.c > 0.2f && x in minOf(q[0], q[6])..maxOf(q[2], q[4]) && y in minOf(q[1], q[3])..maxOf(q[5], q[7])
     }
 
     // ---- touch: drag to spin, momentum, snap; tap = focus or launch; long-press = menu ---------
@@ -676,12 +761,12 @@ class IconDrum(context: Context, private val d: Dimens) : View(context) {
     private var longFired = false
     private var vt: android.view.VelocityTracker? = null
     private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
-    private val colPx get() = radius * Math.toRadians(stepDeg.toDouble()).toFloat()
+    private val groupPx get() = radius * Math.toRadians(stepDeg.toDouble()).toFloat()
     private val longPress = Runnable {
-        val it = hit(downX, downY) ?: return@Runnable
+        val t = hit(downX, downY) ?: return@Runnable
         longFired = true
         performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-        iconRectOnScreen(it.app)?.let { r -> onLongPress(it.app, r) }
+        iconRectOnScreen(t.app)?.let { r -> onLongPress(t.app, r) }
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -698,8 +783,8 @@ class IconDrum(context: Context, private val d: Dimens) : View(context) {
                 vt?.addMovement(e)
                 if (!dragging && kotlin.math.abs(e.x - downX) > slop) { dragging = true; removeCallbacks(longPress); onDragStart() }
                 if (dragging) {
-                    var delta = (lastX - e.x) / colPx
-                    if (pos + delta < 0 || pos + delta > columns - 1) delta *= 0.35f      // rubber band at the ends
+                    var delta = (lastX - e.x) / groupPx
+                    if (pos + delta < 0 || pos + delta > groups - 1) delta *= 0.35f
                     pos += delta
                     lastX = e.x
                     notifyFocus(); invalidate()
@@ -710,19 +795,19 @@ class IconDrum(context: Context, private val d: Dimens) : View(context) {
                 if (dragging) {
                     vt?.computeCurrentVelocity(1000)
                     val v = vt?.xVelocity ?: 0f
-                    val target = Math.round(pos - v / colPx * 0.28f).toFloat()
-                    animateTo(target, (380 + kotlin.math.abs(target - pos) * 45).toLong().coerceAtMost(1100))
+                    val target = Math.round(pos - v / groupPx * 0.25f).toFloat()
+                    animateTo(target, (420 + kotlin.math.abs(target - pos) * 60).toLong().coerceAtMost(1200))
                 } else if (!longFired) {
-                    hit(e.x, e.y)?.let { it ->
-                        if (it.col == Math.round(pos)) iconRectOnScreen(it.app)?.let { r -> onLaunch(it.app, r) }
-                        else animateTo(it.col.toFloat(), 420)
+                    hit(e.x, e.y)?.let { t ->
+                        if (t.group == Math.round(pos)) iconRectOnScreen(t.app)?.let { r -> onLaunch(t.app, r) }
+                        else animateTo(t.group.toFloat(), 460)
                     }
                 }
                 vt?.recycle(); vt = null
             }
             MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(longPress)
-                if (dragging) animateTo(Math.round(pos).toFloat(), 360)
+                if (dragging) animateTo(Math.round(pos).toFloat(), 380)
                 vt?.recycle(); vt = null
             }
         }
