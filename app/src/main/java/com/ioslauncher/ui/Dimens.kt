@@ -46,7 +46,11 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
     val page0ExtraRows = if (dockEnabled && prefs.hideDockOnFirstPage) 1 else 0
     /** Grid rows drawn on [page] (including page 1's status row). */
     fun gridRows(page: Int) = if (page == 0) rows + page0ExtraRows else rows
-    private val page0CellHeight = if (page0ExtraRows > 0) (height - dockBottom - indicatorHeight - gridTop) / (rows + page0ExtraRows) else cellHeight
+    /** Bottom band (dots + search button) on page 1 when the dock is hidden there. */
+    val page0Band = if (page0ExtraRows > 0) (58 * pt).roundToInt() else indicatorHeight
+    private val page0CellHeight = if (page0ExtraRows > 0) (height - dockBottom - page0Band - gridTop) / (rows + page0ExtraRows) else cellHeight
+    /** Search button shows whenever the dock is off — everywhere, or just on page 1. */
+    val showSearchButton = !dockEnabled || page0ExtraRows > 0
     fun cellH(page: Int) = if (page == 0) page0CellHeight else cellHeight
 
     private val labelBlock = if (showLabels) labelGap + labelTextSize * 1.25f else 0f
