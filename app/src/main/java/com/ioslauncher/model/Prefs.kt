@@ -62,6 +62,20 @@ class Prefs(context: Context) {
     fun customIcon(appKey: String): String? = sp.getString("icon:$appKey", null)
     fun setCustomIcon(appKey: String, value: String?) = sp.edit { if (value == null) remove("icon:$appKey") else putString("icon:$appKey", value) }
 
+    // Liquid Glass tuning, 0–2 (1 = default look).
+    var glassBlur: Float
+        get() = sp.getFloat("glass_blur", 1f)
+        set(v) = sp.edit { putFloat("glass_blur", v) }
+    var glassRefraction: Float
+        get() = sp.getFloat("glass_refraction", 1f)
+        set(v) = sp.edit { putFloat("glass_refraction", v) }
+    var glassFrost: Float
+        get() = sp.getFloat("glass_frost", 1f)
+        set(v) = sp.edit { putFloat("glass_frost", v) }
+    var glassShine: Float
+        get() = sp.getFloat("glass_shine", 1f)
+        set(v) = sp.edit { putFloat("glass_shine", v) }
+
     var autoAddNewApps: Boolean
         get() = sp.getBoolean("auto_add", true)
         set(v) = sp.edit { putBoolean("auto_add", v) }

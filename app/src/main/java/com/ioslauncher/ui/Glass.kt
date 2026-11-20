@@ -64,7 +64,21 @@ object Glass {
     fun removeListener(l: () -> Unit) { listeners -= l }
 
     /** (Re)load the wallpaper for glass sampling. Safe to call often. */
+    // User tuning (Settings → Liquid Glass), refreshed on every load.
+    private var blurAmt = 1f
+    private var refractAmt = 1f
+    private var frostAmt = 1f
+    private var shineAmt = 1f
+
+    private fun readSettings() {
+        val p = LauncherApp.instance.prefs
+        blurAmt = p.glassBlur; refractAmt = p.glassRefraction; frostAmt = p.glassFrost; shineAmt = p.glassShine
+    }
+
+    private fun scaleAlpha(c: Int, k: Float) = Color.argb((Color.alpha(c) * k).toInt().coerceIn(0, 255), Color.red(c), Color.green(c), Color.blue(c))
+
     fun load(context: Context, screenW: Int, screenH: Int) {
+        readSettings()
         val app = context.applicationContext
         worker.execute {
             val bmp = runCatching { buildBlurred(app, screenW, screenH) }.getOrNull()
@@ -96,7 +110,9 @@ object Glass {
         } else {
             d.setBounds(l.roundToInt(), t.roundToInt(), (l + dw).roundToInt(), (t + dh).roundToInt()); d.draw(c)
         }
-        boxBlur(out, 5); boxBlur(out, 5); boxBlur(out, 4)
+        // Blur 0 = clear glass, 1 = default (~20px), 2 = heavy frost.
+        val r = (5 * blurAmt).roundToInt()
+        if (r > 0) { boxBlur(out, r); boxBlur(out, r); boxBlur(out, (4 * blurAmt).roundToInt().coerceAtLeast(1)) }
         return out
     }
 
@@ -161,8 +177,8 @@ object Glass {
                 rs.setFloatUniform("viewOrigin", loc[0].toFloat(), loc[1].toFloat())
                 rs.setFloatUniform("rect", rect.left, rect.top, rect.right, rect.bottom)
                 rs.setFloatUniform("radius", radius)
-                rs.setFloatUniform("bezel", (minOf(rect.width(), rect.height()) * 0.32f).coerceAtMost(22 * dm))
-                rs.setFloatUniform("strength", (minOf(rect.width(), rect.height()) * 0.16f).coerceAtMost(14 * dm))
+                rs.setFloatUniform("bezel", (minOf(rect.width(), rect.height()) * 0.32f * (0.6f + 0.4f * refractAmt)).coerceIn(1f, 30 * dm))
+                rs.setFloatUniform("strength", (minOf(rect.width(), rect.height()) * 0.16f).coerceAtMost(14 * dm) * refractAmt)
                 fill.shader = rs
             } else {
                 val m = Matrix(shaderMatrix); m.postTranslate(-loc[0].toFloat(), -loc[1].toFloat())
@@ -176,24 +192,25 @@ object Glass {
         } else {
             // Frosted fallback without wallpaper access.
             fill.shader = null
-            fill.color = Color.argb(46, 255, 255, 255)
+            fill.color = Color.argb((46 * frostAmt.coerceAtLeast(0.3f)).toInt().coerceIn(0, 255), 255, 255, 255)
             canvas.drawPath(path, fill)
         }
-        tintPaint.color = tint
+        tintPaint.color = scaleAlpha(tint, frostAmt)
         canvas.drawPath(path, tintPaint)
 
-        if (!liquid) return
+        if (!liquid || shineAmt <= 0.01f) return
+        fun a(v: Int) = (v * shineAmt).toInt().coerceIn(0, 255)
         // Soft sheen from the top-left, like light caught inside the glass.
         canvas.save()
         canvas.clipPath(path)
         sheenPaint.shader = RadialGradient(rect.left + rect.width() * 0.25f, rect.top, max(rect.width(), rect.height()) * 0.8f,
-            Color.argb(40, 255, 255, 255), Color.TRANSPARENT, Shader.TileMode.CLAMP)
+            Color.argb(a(40), 255, 255, 255), Color.TRANSPARENT, Shader.TileMode.CLAMP)
         canvas.drawRect(rect, sheenPaint)
         canvas.restore()
         // Specular rim: bright top-left and bottom-right edges, fading in between.
         rimPaint.strokeWidth = 1.2f * dm
         rimPaint.shader = LinearGradient(rect.left, rect.top, rect.right, rect.bottom,
-            intArrayOf(Color.argb(190, 255, 255, 255), Color.argb(25, 255, 255, 255), Color.argb(25, 255, 255, 255), Color.argb(120, 255, 255, 255)),
+            intArrayOf(Color.argb(a(190), 255, 255, 255), Color.argb(a(25), 255, 255, 255), Color.argb(a(25), 255, 255, 255), Color.argb(a(120), 255, 255, 255)),
             floatArrayOf(0f, 0.38f, 0.62f, 1f), Shader.TileMode.CLAMP)
         canvas.drawPath(path, rimPaint)
     }

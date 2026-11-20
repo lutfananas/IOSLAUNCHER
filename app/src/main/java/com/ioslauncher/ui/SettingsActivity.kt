@@ -24,6 +24,7 @@ import com.ioslauncher.LauncherApp
 import com.ioslauncher.R
 import com.ioslauncher.icons.IconPack
 import com.ioslauncher.icons.IosShape
+import kotlin.math.roundToInt
 
 /** iOS-style grouped settings: icon pack picker, icon & home options, wallpaper, default launcher. */
 class SettingsActivity : Activity() {
@@ -100,6 +101,13 @@ class SettingsActivity : Activity() {
         val wallpaperOk = android.os.Environment.isExternalStorageManager()
         group(listOf(
             switchRow("Liquid Glass Refraction", prefs.liquidGlass) { prefs.liquidGlass = it },
+            amountRow("Blur", prefs.glassBlur) { prefs.glassBlur = it },
+            amountRow("Refraction (edge bend)", prefs.glassRefraction) { prefs.glassRefraction = it },
+            amountRow("Frost / Tint", prefs.glassFrost) { prefs.glassFrost = it },
+            amountRow("Shine (rim & highlight)", prefs.glassShine) { prefs.glassShine = it },
+            row("Reset Glass to Default") {
+                prefs.glassBlur = 1f; prefs.glassRefraction = 1f; prefs.glassFrost = 1f; prefs.glassShine = 1f; build()
+            },
             row(if (wallpaperOk) "Wallpaper Access: On" else "Allow Wallpaper Access", accent = !wallpaperOk) {
                 runCatching {
                     startActivity(Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
@@ -267,6 +275,31 @@ class SettingsActivity : Activity() {
         r.addView(num, LinearLayout.LayoutParams((40 * dp).toInt(), ViewGroup.LayoutParams.WRAP_CONTENT))
         r.addView(btn("+", 1), LinearLayout.LayoutParams(size, size))
         return r
+    }
+
+    /** 0%–200% slider (100% = default look) for the Liquid Glass tuning. */
+    private fun amountRow(title: String, value: Float, onChange: (Float) -> Unit): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((16 * dp).toInt(), (10 * dp).toInt(), (16 * dp).toInt(), (4 * dp).toInt())
+        }
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        header.addView(TextView(this).apply {
+            text = title; setTextColor(getColor(R.color.settings_text)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val pct = TextView(this).apply { setTextColor(getColor(R.color.settings_secondary)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f) }
+        header.addView(pct)
+        box.addView(header)
+        val bar = android.widget.SeekBar(this).apply { max = 20; progress = (value * 10).roundToInt().coerceIn(0, 20) }
+        fun label(p: Int) { pct.text = if (p == 0) "Off" else "${p * 10}%" }
+        label(bar.progress)
+        bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar, p: Int, fromUser: Boolean) { label(p); if (fromUser) onChange(p / 10f) }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar) {}
+        })
+        box.addView(bar)
+        return box
     }
 
     /** Slider 50%–130% in 5% steps, with a live preview icon and percentage. */

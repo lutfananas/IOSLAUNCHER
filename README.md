@@ -33,7 +33,7 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
 - **Dock bisa dimatikan**, atau disembunyikan hanya di Page 1 (*Hide Dock on Page 1 Only*; Page 1 mendapat satu baris ikon tambahan di ruang dock, dan dock muncul lagi saat digeser ke halaman 2). Background kaca dock mengecil/membesar mengikuti jumlah ikon di dalamnya.
 - **Tema Liquid Glass.** Dock, folder, kartu App Library, kolom pencarian, menu, alert, tombol, dan indikator halaman memakai
   kaca yang membiaskan wallpaper (refraksi + sedikit pemisahan warna di tepi, Android 13+), kilau di bagian atas, dan tepi
-  spekular. Android 14+ hanya mengizinkan aplikasi membaca wallpaper dengan izin *All files access*
+  spekular. Blur, refraksi, frost/tint, dan kilau bisa diatur 0–200% di *Settings → Liquid Glass*. Android 14+ hanya mengizinkan aplikasi membaca wallpaper dengan izin *All files access*
   (*Settings → Allow Wallpaper Access*); tanpa izin itu kaca tampil sebagai frosted glass.
 - Mode edit (jiggle): tekan lama ruang kosong atau pilih *Edit Home Screen*; seret ikon untuk menyusun ulang, pindah halaman
   di tepi layar, atau masukkan ke dock (maks. 4). Tombol "−" menghapus dari Home Screen (app tetap ada di App Library).
