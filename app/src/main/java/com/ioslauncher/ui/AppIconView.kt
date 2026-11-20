@@ -30,7 +30,7 @@ enum class IconSource { HOME, DOCK, LIBRARY, FOLDER }
 class AppIconView(context: Context, private val host: LauncherHost, val source: IconSource) : View(context) {
     var app: AppInfo? = null; private set
     var bitmap: Bitmap? = null; private set
-    var iconSize = host.dimens.iconSize
+    var iconSize = if (source == IconSource.DOCK) host.dimens.dockIconSize else host.dimens.iconSize
     var showLabel = true
     var iconTop = 0f
 

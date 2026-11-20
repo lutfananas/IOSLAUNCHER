@@ -151,9 +151,10 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         applyFullscreen()
         if (!built) return
         if (settingsDirty) {
+            // Icon sizes / labels change the whole grid metrics: rebuild the launcher UI.
             settingsDirty = false
-            reloadIcons()
-            applyLayout(false)
+            recreate()
+            return
         }
         val keyguard = getSystemService(KeyguardManager::class.java)
         if (pendingUnlock && !keyguard.isKeyguardLocked) {

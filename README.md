@@ -16,8 +16,10 @@ Launcher Android (target API 37 / Android 17, minimal Android 12) dengan tampila
   plus pencarian dengan daftar A–Z dan indeks huruf.
 - **Fullscreen.** Status bar disembunyikan (swipe dari tepi atas untuk menampilkannya sementara).
 - **Indikator baterai / Wi-Fi / sinyal di pojok kanan atas Page 1.** Baris pertama Page 1 dikosongkan kecuali satu
-  glyph gabungan: cincin baterai, ikon Wi-Fi di dalamnya, dan titik sinyal seluler, dengan persen baterai di bawahnya.
+  glyph gabungan (posisinya dinaikkan setengah ukuran ikon dari baris pertama): cincin baterai, ikon Wi-Fi di dalamnya, dan titik sinyal seluler, dengan persen baterai di bawahnya.
   Diadaptasi dari [Duo Launcher](https://github.com/jakesgoodapps/DuoLauncher) (lisensi MIT, lihat `THIRD_PARTY_NOTICES.md`).
+- **Ukuran ikon bisa diatur, terpisah untuk Home Screen dan Dock** (50%–130% dari ukuran ikon iOS),
+  plus opsi **Hide App Names** untuk menyembunyikan nama ikon. Ada di *Settings → Icon Size / Icons*.
 - Mode edit (jiggle): tekan lama ruang kosong atau pilih *Edit Home Screen*; seret ikon untuk menyusun ulang, pindah halaman
   di tepi layar, atau masukkan ke dock (maks. 4). Tombol "−" menghapus dari Home Screen (app tetap ada di App Library).
 - Menu konteks gaya iOS saat ikon ditekan lama, swipe ke bawah untuk pencarian, swipe ke bawah dari pojok atas

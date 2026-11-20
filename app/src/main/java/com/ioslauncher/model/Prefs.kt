@@ -19,6 +19,16 @@ class Prefs(context: Context) {
         get() = sp.getBoolean("show_labels", true)
         set(v) = sp.edit { putBoolean("show_labels", v) }
 
+    /** Home Screen icon size, 0.5–1.3 × the iOS 60pt icon. */
+    var homeIconScale: Float
+        get() = sp.getFloat("home_icon_scale", 1f)
+        set(v) = sp.edit { putFloat("home_icon_scale", v) }
+
+    /** Dock icon size, independent of the Home Screen size. */
+    var dockIconScale: Float
+        get() = sp.getFloat("dock_icon_scale", 1f)
+        set(v) = sp.edit { putFloat("dock_icon_scale", v) }
+
     var autoAddNewApps: Boolean
         get() = sp.getBoolean("auto_add", true)
         set(v) = sp.edit { putBoolean("auto_add", v) }

@@ -85,7 +85,7 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
 
     private fun iconTop(): Float {
         val d = host.dimens
-        val block = d.iconSize + d.labelGap + d.labelTextSize * 1.2f
+        val block = if (d.showLabels) d.iconSize + d.labelGap + d.labelTextSize * 1.2f else d.iconSize.toFloat()
         return ((d.cellHeight - block) / 2f).coerceAtLeast(0f)
     }
 
@@ -116,11 +116,13 @@ class HomePageView(context: Context, private val host: LauncherHost, var pageInd
             sv.iconTop = top
             sv.labelTextSize = d.labelTextSize
             sv.showLabel = LauncherApp.instance.prefs.showLabels
-            sv.layout(o.x, o.y, o.x + d.cellWidth, o.y + d.cellHeight)
+            // Raised by half an icon above the first-row cell.
+            val lift = d.iconSize / 2
+            sv.layout(o.x, o.y - lift, o.x + d.cellWidth, o.y + d.cellHeight - lift)
         }
         keys.forEachIndexed { index, key ->
             val v = views[key] ?: return@forEachIndexed
-            v.iconSize = d.iconSize
+            if (v.iconSize != d.iconSize) { v.iconSize = d.iconSize; v.reloadIcon() }
             v.iconTop = top
             val o = cellOrigin(cellFor(index))
             v.layout(o.x, o.y, o.x + d.cellWidth, o.y + d.cellHeight)
@@ -217,10 +219,10 @@ class DockView(context: Context, private val host: LauncherHost) : ViewGroup(con
 
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         val d = host.dimens
-        val top = (height - d.iconSize) / 2f
+        val top = (height - d.dockIconSize) / 2f
         keys.forEachIndexed { index, key ->
             val v = views[key] ?: return@forEachIndexed
-            v.iconSize = d.iconSize
+            if (v.iconSize != d.dockIconSize) { v.iconSize = d.dockIconSize; v.reloadIcon() }
             v.iconTop = top
             val x = slotLeft(index, keys.size)
             v.layout(x, 0, x + d.cellWidth, height)

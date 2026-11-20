@@ -27,6 +27,8 @@ import com.ioslauncher.icons.IosShape
 
 /** iOS-style grouped settings: icon pack picker, icon & home options, wallpaper, default launcher. */
 class SettingsActivity : Activity() {
+    companion object { const val MIN_SCALE = 50; const val MAX_SCALE = 130 }
+
     private val prefs get() = LauncherApp.instance.prefs
     private lateinit var list: LinearLayout
     private val dp get() = resources.displayMetrics.density
@@ -79,10 +81,17 @@ class SettingsActivity : Activity() {
         footer(if (packs.isEmpty()) "No icon packs installed. Install any ADW / Nova / Apex compatible icon pack from the Play Store and it will show up here."
         else "Icons from the pack are drawn into the exact iOS app icon shape. Apps the pack doesn't cover use the pack's own mask, or the system icon.")
 
+        section("ICON SIZE")
+        group(listOf(
+            sliderRow("Home Screen", prefs.homeIconScale) { prefs.homeIconScale = it },
+            sliderRow("Dock", prefs.dockIconScale) { prefs.dockIconScale = it },
+        ))
+        footer("100% = iOS standard icon size. Home Screen and Dock are sized separately.")
+
         section("ICONS")
         group(listOf(
+            switchRow("Hide App Names", !prefs.showLabels) { prefs.showLabels = !it },
             switchRow("Fit Icons to iOS Shape", prefs.normalizePackIcons) { prefs.normalizePackIcons = it; LauncherApp.instance.icons.invalidate() },
-            switchRow("Show App Names", prefs.showLabels) { prefs.showLabels = it },
         ))
 
         section("HOME SCREEN")
@@ -199,6 +208,49 @@ class SettingsActivity : Activity() {
         r.addView(sw)
         r.setOnClickListener { sw.toggle() }
         return r
+    }
+
+    /** Slider 50%–130% in 5% steps, with a live preview icon and percentage. */
+    private fun sliderRow(title: String, value: Float, onChange: (Float) -> Unit): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding((16 * dp).toInt(), (10 * dp).toInt(), (16 * dp).toInt(), (6 * dp).toInt())
+        }
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        header.addView(TextView(this).apply {
+            text = title; setTextColor(getColor(R.color.settings_text)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
+        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        val pct = TextView(this).apply { setTextColor(getColor(R.color.settings_secondary)); setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f) }
+        header.addView(pct)
+        box.addView(header)
+        val preview = SizePreview(this)
+        val bar = android.widget.SeekBar(this).apply {
+            max = (MAX_SCALE - MIN_SCALE) / 5
+            progress = ((value * 100).toInt() - MIN_SCALE) / 5
+        }
+        fun show(p: Int) { val s = MIN_SCALE + p * 5; pct.text = "$s%"; preview.scale = s / 100f }
+        show(bar.progress)
+        bar.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: android.widget.SeekBar, p: Int, fromUser: Boolean) { show(p); if (fromUser) onChange((MIN_SCALE + p * 5) / 100f) }
+            override fun onStartTrackingTouch(sb: android.widget.SeekBar) {}
+            override fun onStopTrackingTouch(sb: android.widget.SeekBar) {}
+        })
+        val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        line.addView(bar, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        line.addView(preview, LinearLayout.LayoutParams((62 * dp).toInt(), (62 * dp).toInt()))
+        box.addView(line)
+        return box
+    }
+
+    /** Squircle preview at the chosen scale (60pt reference = 100%). */
+    private class SizePreview(context: android.content.Context) : View(context) {
+        var scale = 1f; set(v) { field = v; invalidate() }
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(0, 122, 255) }
+        override fun onDraw(canvas: Canvas) {
+            val s = width / 1.3f * scale
+            canvas.translate((width - s) / 2f, (height - s) / 2f)
+            canvas.drawPath(IosShape.iconPath(s), p)
+        }
     }
 
     private class CheckMark(context: android.content.Context) : View(context) {

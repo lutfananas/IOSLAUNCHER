@@ -9,14 +9,20 @@ class Dimens(context: Context, val width: Int, val height: Int, val topInset: In
     val density = context.resources.displayMetrics.density
     private val pt = width / 390f                         // 1 iOS point on this screen
 
-    val iconSize = (60 * pt).roundToInt()
+    private val prefs = com.ioslauncher.LauncherApp.instance.prefs
+    val showLabels = prefs.showLabels
     val labelTextSize = 12f * pt
     val labelGap = 5 * pt
     val sidePadding = (27 * pt).roundToInt()
     val cellWidth = (width - 2 * sidePadding) / LayoutStore.COLS
 
+    /** Home Screen / App Library icon size (user scale, capped so icons never overlap). */
+    val iconSize = (60 * pt * prefs.homeIconScale).roundToInt().coerceAtMost((cellWidth * 0.94f).toInt())
+    /** Dock icon size — set separately from the Home Screen. */
+    val dockIconSize = (60 * pt * prefs.dockIconScale).roundToInt().coerceAtMost((cellWidth * 0.94f).toInt())
+
     val dockMargin = (12 * pt).roundToInt()
-    val dockHeight = (96 * pt).roundToInt()
+    val dockHeight = maxOf((96 * pt).roundToInt(), dockIconSize + (30 * pt).roundToInt())
     val dockRadius = 34 * pt
     val dockBottom = bottomInset.coerceAtLeast((8 * pt).roundToInt()) + (4 * pt).roundToInt()
     val dockTop = height - dockBottom - dockHeight
