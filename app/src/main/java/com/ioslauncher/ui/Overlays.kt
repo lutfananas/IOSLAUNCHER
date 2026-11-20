@@ -283,7 +283,7 @@ class CategoryOverlay(context: Context, host: OverlayHost, category: LibraryCate
 }
 
 // ---------------------------------------------------------------------------------------------------
-// Search: icon carousel (cover-flow) + live filter + A–Z strip + suggestions
+// Search: two-row 3D icon drum + live filter + A–Z strip + suggestions
 // ---------------------------------------------------------------------------------------------------
 
 @SuppressLint("ViewConstructor")
@@ -292,27 +292,18 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
     private val d = host.dimens
     private val field = EditText(context)
     private val content = FrameLayout(context)
-    private val carousel = RecyclerView(context)
-    private val lm = LinearLayoutManager(context, LinearLayoutManager.HORIZONTAL, false)
-    private val adapter = CarouselAdapter()
-    private val nameView = TextView(context)
-    private val subView = TextView(context)
+    private val drum = IconDrum(context, d)
     private val countView = TextView(context)
     private val letters = LetterStrip(context)
     private val suggestions = LinearLayout(context)
     private val suggestionsTitle = TextView(context)
-
-    /** Big centre icon, spacing between icon centres. */
-    private val bigIcon = d.pt(96f).toInt()
-    private val itemW = d.pt(104f).toInt()
-    private var centered = -1
     private var results: List<AppInfo> = emptyList()
     private val sorted = allApps.sortedWith(compareBy<AppInfo> { letterOf(it) == "#" }.thenBy { it.label.lowercase() })
 
     init {
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
-        // ---- search field ------------------------------------------------------------------
+        // ---- search field (a quarter of a 100% icon lower than the grid top) ------------------
         val bar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         val fieldBox = FrameLayout(context).apply { background = GlassDrawable(d.searchBarHeight / 2f, Color.argb(30, 255, 255, 255)) }
         val glyph = object : View(context) {
@@ -337,7 +328,7 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
             })
             setOnEditorActionListener { _, actionId, event ->
                 if (actionId == EditorInfo.IME_ACTION_GO || event?.keyCode == KeyEvent.KEYCODE_ENTER) {
-                    results.getOrNull(centered.coerceAtLeast(0))?.let { launch(it, centerIconRect()) }
+                    drum.focusedApp()?.let { launch(it, drum.iconRectOnScreen(it)) }
                     true
                 } else false
             }
@@ -352,69 +343,41 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
             setPadding(d.pt(14f).toInt(), 0, 0, 0)
             setOnClickListener { close() }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, d.searchBarHeight))
-        val barTop = d.gridTop - d.pt(4f).toInt()
+        val barTop = d.gridTop - d.pt(4f).toInt() + d.pt(15f).toInt()
         content.addView(bar, LayoutParams(LayoutParams.MATCH_PARENT, d.searchBarHeight).apply {
             topMargin = barTop; leftMargin = d.librarySide; rightMargin = d.librarySide
         })
 
-        // ---- carousel ----------------------------------------------------------------------
-        val carouselTop = barTop + d.searchBarHeight + d.pt(26f).toInt()
-        val carouselH = (bigIcon * 1.25f).toInt()
-        val side = (d.width - itemW) / 2
-        carousel.layoutManager = lm
-        carousel.adapter = adapter
-        carousel.clipToPadding = false
-        carousel.clipChildren = false
-        carousel.overScrollMode = OVER_SCROLL_NEVER
-        carousel.setPadding(side, 0, side, 0)
-        androidx.recyclerview.widget.LinearSnapHelper().attachToRecyclerView(carousel)
-        carousel.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) = transformChildren()
-            override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
-                if (state == RecyclerView.SCROLL_STATE_DRAGGING) hideKeyboard()
-            }
-        })
-        content.addView(carousel, LayoutParams(LayoutParams.MATCH_PARENT, carouselH).apply { topMargin = carouselTop })
-
-        // ---- centred app name / category ----------------------------------------------------
-        nameView.apply {
-            setTextColor(Color.WHITE); gravity = Gravity.CENTER; maxLines = 1
-            typeface = Typeface.create(Typeface.DEFAULT, 700, false)
-            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(22f))
-            setShadowLayer(8f, 0f, 1f, Color.argb(80, 0, 0, 0))
-        }
-        subView.apply {
-            setTextColor(Color.argb(190, 255, 255, 255)); gravity = Gravity.CENTER; maxLines = 1
-            setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(14f))
-        }
-        val nameTop = carouselTop + carouselH + d.pt(4f).toInt()
-        content.addView(nameView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-            topMargin = nameTop; leftMargin = d.librarySide; rightMargin = d.librarySide
-        })
-        content.addView(subView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-            topMargin = nameTop + d.pt(30f).toInt()
-        })
         countView.apply {
             setTextColor(Color.argb(160, 255, 255, 255)); gravity = Gravity.CENTER
             setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(13f))
         }
-        content.addView(countView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
-            topMargin = carouselTop - d.pt(20f).toInt()
-        })
+        val countTop = barTop + d.searchBarHeight + d.pt(12f).toInt()
+        content.addView(countView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply { topMargin = countTop })
 
-        // ---- A–Z strip -----------------------------------------------------------------------
-        letters.onLetter = { l -> jumpToLetter(l) }
+        // ---- 3D drum --------------------------------------------------------------------------
+        val drumTop = countTop + d.pt(18f).toInt()
+        val drumH = drum.preferredHeight()
+        drum.onLaunch = { a, r -> launch(a, r) }
+        drum.onLongPress = { a, r -> hideKeyboard(); host.onLibraryLongPress(a, r) }
+        drum.onDragStart = { hideKeyboard() }
+        drum.onFocusChanged = { a -> letters.current = a?.let { letterOf(it) } ?: "" }
+        content.addView(drum, LayoutParams(LayoutParams.MATCH_PARENT, drumH).apply { topMargin = drumTop })
+
+        // ---- A–Z strip -------------------------------------------------------------------------
+        letters.onLetter = { l -> val pos = results.indexOfFirst { letterOf(it) == l }; if (pos >= 0) drum.scrollToItem(pos, animate = true) }
+        val lettersTop = drumTop + drumH + d.pt(4f).toInt()
         content.addView(letters, LayoutParams(LayoutParams.MATCH_PARENT, d.pt(30f).toInt()).apply {
-            topMargin = nameTop + d.pt(60f).toInt(); leftMargin = d.pt(12f).toInt(); rightMargin = d.pt(12f).toInt()
+            topMargin = lettersTop; leftMargin = d.pt(12f).toInt(); rightMargin = d.pt(12f).toInt()
         })
 
-        // ---- suggestions (most used) -----------------------------------------------------------
+        // ---- suggestions -----------------------------------------------------------------------
         suggestionsTitle.apply {
             text = "SUGGESTIONS"; setTextColor(Color.argb(170, 255, 255, 255))
             typeface = Typeface.create(Typeface.DEFAULT, 600, false)
             setTextSize(TypedValue.COMPLEX_UNIT_PX, d.pt(13f))
         }
-        val sugTop = nameTop + d.pt(108f).toInt()
+        val sugTop = lettersTop + d.pt(44f).toInt()
         content.addView(suggestionsTitle, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
             topMargin = sugTop; leftMargin = d.librarySide + d.pt(6f).toInt()
         })
@@ -452,7 +415,7 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
                 val l = it.label.lowercase()
                 when { l.startsWith(query) -> 0; l.split(' ').any { w -> w.startsWith(query) } -> 1; l.contains(query) -> 2; else -> 3 }
             }.thenBy { it.label.lowercase() })
-        adapter.notifyDataSetChanged()
+        drum.setApps(results)
         val searching = query.isNotEmpty()
         letters.visibility = if (searching) INVISIBLE else VISIBLE
         suggestions.visibility = if (searching) GONE else VISIBLE
@@ -463,55 +426,6 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
             results.size == 1 -> "1 Result"
             else -> "${results.size} Results"
         }
-        centered = -1
-        lm.scrollToPositionWithOffset(0, 0)
-        carousel.post { transformChildren() }
-        if (results.isEmpty()) { nameView.text = ""; subView.text = "" }
-    }
-
-    /** Cover-flow: centre item full size; neighbours shrink, fade, tilt away and dip on an arc. */
-    private fun transformChildren() {
-        val cx = carousel.width / 2f
-        var best = -1; var bestDist = Float.MAX_VALUE
-        for (i in 0 until carousel.childCount) {
-            val c = carousel.getChildAt(i)
-            val mid = (c.left + c.right) / 2f
-            val dist = mid - cx
-            val t = (kotlin.math.abs(dist) / (itemW * 2.2f)).coerceIn(0f, 1f)
-            val s = 1f - 0.5f * t
-            c.scaleX = s; c.scaleY = s
-            c.alpha = 1f - 0.65f * t
-            c.rotationY = (-dist / itemW * 22f).coerceIn(-55f, 55f)
-            c.translationY = t * t * d.pt(26f)
-            c.cameraDistance = 8000 * resources.displayMetrics.density
-            if (kotlin.math.abs(dist) < bestDist) { bestDist = kotlin.math.abs(dist); best = carousel.getChildAdapterPosition(c) }
-        }
-        if (best >= 0 && best != centered) {
-            centered = best
-            val a = results.getOrNull(best) ?: return
-            nameView.text = a.label
-            subView.text = a.category
-            letters.current = letterOf(a)
-            carousel.performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
-        }
-    }
-
-    private fun jumpToLetter(l: String) {
-        val pos = results.indexOfFirst { letterOf(it) == l }
-        if (pos >= 0) { lm.scrollToPositionWithOffset(pos, 0); carousel.post { transformChildren() } }
-    }
-
-    private fun centerOn(position: Int) {
-        val v = lm.findViewByPosition(position)
-        if (v == null) { lm.scrollToPositionWithOffset(position, 0); carousel.post { transformChildren() }; return }
-        carousel.smoothScrollBy(((v.left + v.right) / 2 - carousel.width / 2), 0)
-    }
-
-    private fun centerIconRect(): Rect? {
-        val v = lm.findViewByPosition(centered) ?: return null
-        val loc = IntArray(2); v.getLocationOnScreen(loc)
-        val l = loc[0] + (v.width - bigIcon) / 2; val t = loc[1] + (v.height - bigIcon) / 2
-        return Rect(l, t, l + bigIcon, t + bigIcon)
     }
 
     private fun launch(app: AppInfo, bounds: Rect?) {
@@ -524,9 +438,7 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
         super.show()
         content.translationY = -d.pt(30f)
         content.animate().translationY(0f).setDuration(320).setInterpolator(HomePageView.EASE).start()
-        // Carousel sweeps in from the right.
-        carousel.translationX = d.width * 0.4f; carousel.alpha = 0f
-        carousel.animate().translationX(0f).alpha(1f).setDuration(420).setInterpolator(HomePageView.EASE).start()
+        drum.playIntro()
         field.requestFocus()
         field.post { field.windowInsetsController?.show(WindowInsets.Type.ime()) }
     }
@@ -538,53 +450,283 @@ class SearchOverlay(context: Context, host: OverlayHost, private val allApps: Li
         content.animate().translationY(-d.pt(30f)).setDuration(200).start()
         super.close(after)
     }
+}
 
-    private inner class CarouselAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
-        override fun getItemCount() = results.size
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
-            val v = CarouselIcon(context)
-            v.layoutParams = RecyclerView.LayoutParams(itemW, ViewGroup.LayoutParams.MATCH_PARENT)
-            return object : RecyclerView.ViewHolder(v) {}
+/**
+ * Two-row 3D icon drum. Apps sit on the outside of a horizontal cylinder (column-major: two apps per
+ * column) and the whole drum spins as you swipe. Each icon is a real perspective-projected quad
+ * (Matrix.setPolyToPoly), drawn back-to-front with depth fading, a floor glow, a mirrored reflection
+ * under the bottom row and labels that fade as icons turn away. Swipes have momentum and the drum
+ * snaps to a column with a small overshoot.
+ */
+class IconDrum(context: Context, private val d: Dimens) : View(context) {
+    var onLaunch: (AppInfo, Rect) -> Unit = { _, _ -> }
+    var onLongPress: (AppInfo, Rect) -> Unit = { _, _ -> }
+    var onDragStart: () -> Unit = {}
+    var onFocusChanged: (AppInfo?) -> Unit = {}
+
+    private var apps: List<AppInfo> = emptyList()
+    private val bitmaps = HashMap<String, Bitmap>()
+    private val icon = d.pt(74f)                     // front icon size
+    private val rowGap = d.pt(44f)                   // gap between the two rows
+    private val stepDeg = 30f                        // angle between columns (tighter drum = stronger 3D)
+    private val radius = (icon + d.pt(16f)) / (2f * kotlin.math.sin(Math.toRadians(stepDeg / 2.0)).toFloat())
+    private val focal = d.pt(460f)                   // perspective strength
+    private val tilt = Math.toRadians(12.0)          // camera looks slightly down onto the drum
+    private val cosT = kotlin.math.cos(tilt).toFloat()
+    private val sinT = kotlin.math.sin(tilt).toFloat()
+    private val iconPx = icon.toInt()
+
+    /** Column at the front, fractional while spinning. */
+    private var pos = 0f
+    private var lastFocusCol = -1
+    private var anim: android.animation.ValueAnimator? = null
+    private var introT = 1f
+
+    private val paint = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
+    private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE; textAlign = Paint.Align.CENTER
+        typeface = Typeface.create(Typeface.DEFAULT, 500, false)
+        setShadowLayer(6f, 0f, 1f, Color.argb(90, 0, 0, 0))
+    }
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fadePaint = Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_IN) }
+    private val m = android.graphics.Matrix()
+    private val src = FloatArray(8)
+    private val dst = FloatArray(8)
+
+    private data class Item(val index: Int, val app: AppInfo, val z: Float, val quad: FloatArray, val facing: Float, val row: Int, val col: Int)
+    private var drawn: List<Item> = emptyList()
+
+    fun preferredHeight() = (2 * icon + rowGap + d.pt(96f)).toInt()
+
+    private val columns get() = (apps.size + 1) / 2
+
+    fun setApps(list: List<AppInfo>) {
+        apps = list
+        anim?.cancel()
+        pos = 0f; lastFocusCol = -1
+        val want = list.take(80).map { it.key }.toSet()
+        bitmaps.keys.retainAll(want)
+        list.take(80).forEach { load(it) }
+        notifyFocus()
+        invalidate()
+    }
+
+    private fun load(a: AppInfo) {
+        if (bitmaps.containsKey(a.key)) return
+        LauncherApp.instance.icons.load(a, iconPx) { b -> bitmaps[a.key] = b; invalidate() }
+    }
+
+    fun focusedApp(): AppInfo? = apps.getOrNull(Math.round(pos).coerceAtLeast(0) * 2)
+
+    fun scrollToItem(index: Int, animate: Boolean) {
+        val col = (index / 2).toFloat()
+        if (animate) animateTo(col, 520) else { pos = col; invalidate(); notifyFocus() }
+    }
+
+    fun playIntro() {
+        introT = 0f
+        android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 700; interpolator = android.view.animation.OvershootInterpolator(0.9f)
+            addUpdateListener { introT = it.animatedValue as Float; invalidate() }
+            start()
         }
-        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
-            val v = holder.itemView as CarouselIcon
-            val a = results[position]
-            v.bind(a)
-            v.setOnClickListener {
-                val pos = holder.bindingAdapterPosition
-                if (pos == centered) launch(a, centerIconRect()) else centerOn(pos)
+    }
+
+    private fun notifyFocus() {
+        val c = Math.round(pos)
+        if (c != lastFocusCol) {
+            if (lastFocusCol != -1) performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK)
+            lastFocusCol = c
+            onFocusChanged(focusedApp())
+        }
+    }
+
+    private fun animateTo(target: Float, duration: Long) {
+        anim?.cancel()
+        val t = target.coerceIn(0f, (columns - 1).coerceAtLeast(0).toFloat())
+        anim = android.animation.ValueAnimator.ofFloat(pos, t).apply {
+            this.duration = duration
+            interpolator = android.view.animation.OvershootInterpolator(1.05f)
+            addUpdateListener { pos = it.animatedValue as Float; notifyFocus(); invalidate() }
+            start()
+        }
+    }
+
+    // ---- projection --------------------------------------------------------------------------
+
+    private fun project(x: Float, y: Float, z: Float, out: FloatArray, o: Int) {
+        // Tilt the drum about its own axis (z = radius) so the far side rises, then perspective-divide.
+        val zr = z - radius
+        val y2 = y * cosT - zr * sinT
+        val z2 = y * sinT + zr * cosT + radius * cosT
+        val p = focal / (focal + z2)
+        out[o] = width / 2f + x * p
+        out[o + 1] = centerY() + y2 * p
+    }
+
+    private fun centerY() = icon / 2f + d.pt(18f) + rowGap / 2f + icon / 2f
+
+    override fun onDraw(canvas: Canvas) {
+        if (apps.isEmpty()) return
+        val items = ArrayList<Item>()
+        val spin = (1f - introT) * 3.5f                       // intro: drum spins into place
+        val first = (pos - 5).toInt().coerceAtLeast(0)
+        val last = (pos + 5).toInt().coerceAtMost(columns - 1)
+        val h = icon / 2f
+        for (col in first..last) {
+            val thetaDeg = (col - pos - spin) * stepDeg
+            if (kotlin.math.abs(thetaDeg) > 80f) continue
+            val th = Math.toRadians(thetaDeg.toDouble())
+            val s = kotlin.math.sin(th).toFloat(); val c = kotlin.math.cos(th).toFloat()
+            val cx = radius * s
+            val cz = radius * (1 - c)
+            for (row in 0..1) {
+                val idx = col * 2 + row
+                val a = apps.getOrNull(idx) ?: continue
+                val cy = if (row == 0) -rowGap / 2f - h else rowGap / 2f + h
+                val q = FloatArray(8)
+                // Corners: tangent half-vector (c, 0, s)·h  and vertical ±h.
+                project(cx - c * h, cy - h, cz - s * h, q, 0)
+                project(cx + c * h, cy - h, cz + s * h, q, 2)
+                project(cx + c * h, cy + h, cz + s * h, q, 4)
+                project(cx - c * h, cy + h, cz - s * h, q, 6)
+                items += Item(idx, a, cz, q, c, row, col)
             }
-            v.setOnLongClickListener {
-                val loc = IntArray(2); v.getLocationOnScreen(loc)
-                val l = loc[0] + (v.width - bigIcon) / 2; val t = loc[1] + (v.height - bigIcon) / 2
-                hideKeyboard()
-                host.onLibraryLongPress(a, Rect(l, t, l + bigIcon, t + bigIcon)); true
+        }
+        items.sortByDescending { it.z }
+        drawn = items
+
+        // Floor glow under the drum, just below the front bottom icon.
+        val front = items.filter { it.row == 1 }.minByOrNull { it.z }
+        val floorY = front?.let { maxOf(it.quad[5], it.quad[7]) + d.pt(2f) } ?: (centerY() + rowGap / 2f + icon)
+        glowPaint.shader = android.graphics.RadialGradient(width / 2f, floorY, width * 0.45f,
+            Color.argb(70, 255, 255, 255), Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP)
+        canvas.save(); canvas.scale(1f, 0.16f, width / 2f, floorY)
+        canvas.drawCircle(width / 2f, floorY, width * 0.45f, glowPaint)
+        canvas.restore()
+
+        // Reflections of the bottom row (faded with a vertical mask).
+        val reflTop = floorY - d.pt(4f)
+        val reflH = icon * 0.55f
+        val layer = canvas.saveLayer(0f, reflTop, width.toFloat(), reflTop + reflH, null)
+        for (it in items) {
+            if (it.row != 1 || it.facing < 0.2f) continue
+            val b = bitmaps[it.app.key] ?: continue
+            val q = it.quad
+            // Mirror the quad about its bottom edge.
+            dst[0] = q[6]; dst[1] = q[7]; dst[2] = q[4]; dst[3] = q[5]
+            dst[4] = q[2]; dst[5] = 2 * q[5] - q[3]; dst[6] = q[0]; dst[7] = 2 * q[7] - q[1]
+            drawQuad(canvas, b, dst, (70 * it.facing).toInt())
+        }
+        glowPaint.shader = null
+        fadePaint.shader = android.graphics.LinearGradient(0f, reflTop, 0f, reflTop + reflH,
+            Color.argb(255, 0, 0, 0), Color.TRANSPARENT, android.graphics.Shader.TileMode.CLAMP)
+        canvas.drawRect(0f, reflTop, width.toFloat(), reflTop + reflH, fadePaint)
+        canvas.restoreToCount(layer)
+
+        // Icons back-to-front, darker and fainter the further they turn away.
+        for (it in items) {
+            val b = bitmaps[it.app.key] ?: continue
+            val k = it.facing.coerceIn(0f, 1f)
+            val alpha = (255 * (0.2f + 0.8f * k * kotlin.math.sqrt(k)) * introT.coerceIn(0f, 1f)).toInt()
+            // Side icons turn away from the light: darken them.
+            val lum = (255 * (0.55f + 0.45f * k)).toInt()
+            paint.colorFilter = if (lum < 252) android.graphics.LightingColorFilter(Color.rgb(lum, lum, lum), 0) else null
+            drawQuad(canvas, b, it.quad, alpha)
+            paint.colorFilter = null
+            if (it.facing > 0.55f) {
+                val q = it.quad
+                val p = focal / (focal + it.z)
+                labelPaint.textSize = d.pt(12.5f) * p
+                labelPaint.alpha = (255 * ((it.facing - 0.55f) / 0.45f).coerceIn(0f, 1f) * introT.coerceIn(0f, 1f)).toInt()
+                val text = android.text.TextUtils.ellipsize(it.app.label, android.text.TextPaint(labelPaint), icon * 1.25f * p,
+                    android.text.TextUtils.TruncateAt.END).toString()
+                canvas.drawText(text, (q[4] + q[6]) / 2f, maxOf(q[5], q[7]) + d.pt(15f) * p, labelPaint)
             }
         }
     }
 
-    /** One carousel tile: big squircle icon with a soft reflection-like shadow. */
-    private inner class CarouselIcon(context: Context) : View(context) {
-        private var app: AppInfo? = null
-        private var bmp: Bitmap? = null
-        private val p = Paint(Paint.FILTER_BITMAP_FLAG or Paint.ANTI_ALIAS_FLAG)
-        private val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.argb(60, 0, 0, 0)
-            maskFilter = android.graphics.BlurMaskFilter(d.pt(10f), android.graphics.BlurMaskFilter.Blur.NORMAL)
-        }
-        init { isClickable = true; isLongClickable = true; setLayerType(LAYER_TYPE_SOFTWARE, null) }
+    private fun drawQuad(canvas: Canvas, b: Bitmap, q: FloatArray, alpha: Int) {
+        src[0] = 0f; src[1] = 0f; src[2] = b.width.toFloat(); src[3] = 0f
+        src[4] = b.width.toFloat(); src[5] = b.height.toFloat(); src[6] = 0f; src[7] = b.height.toFloat()
+        m.setPolyToPoly(src, 0, q, 0, 4)
+        paint.alpha = alpha.coerceIn(0, 255)
+        canvas.drawBitmap(b, m, paint)
+    }
 
-        fun bind(a: AppInfo) {
-            app = a; bmp = null; contentDescription = a.label
-            LauncherApp.instance.icons.load(a, bigIcon) { if (app?.key == a.key) { bmp = it; invalidate() } }
-            invalidate()
-        }
+    fun iconRectOnScreen(a: AppInfo): Rect? {
+        val it = drawn.firstOrNull { x -> x.app.key == a.key } ?: return null
+        val loc = IntArray(2); getLocationOnScreen(loc)
+        val q = it.quad
+        val l = minOf(q[0], q[6]); val r = maxOf(q[2], q[4]); val t = minOf(q[1], q[3]); val btm = maxOf(q[5], q[7])
+        return Rect((loc[0] + l).toInt(), (loc[1] + t).toInt(), (loc[0] + r).toInt(), (loc[1] + btm).toInt())
+    }
 
-        override fun onDraw(canvas: Canvas) {
-            val l = (width - bigIcon) / 2f; val t = (height - bigIcon) / 2f
-            canvas.drawOval(RectF(l + bigIcon * 0.12f, t + bigIcon * 0.9f, l + bigIcon * 0.88f, t + bigIcon * 1.08f), shadow)
-            bmp?.let { canvas.drawBitmap(it, null, RectF(l, t, l + bigIcon, t + bigIcon), p) }
+    private fun hit(x: Float, y: Float): Item? = drawn.asReversed().firstOrNull { it ->
+        val q = it.quad
+        it.facing > 0.2f && x in minOf(q[0], q[6])..maxOf(q[2], q[4]) && y in minOf(q[1], q[3])..maxOf(q[5], q[7])
+    }
+
+    // ---- touch: drag to spin, momentum, snap; tap = focus or launch; long-press = menu ---------
+
+    private var downX = 0f; private var downY = 0f; private var lastX = 0f
+    private var dragging = false
+    private var longFired = false
+    private var vt: android.view.VelocityTracker? = null
+    private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+    private val colPx get() = radius * Math.toRadians(stepDeg.toDouble()).toFloat()
+    private val longPress = Runnable {
+        val it = hit(downX, downY) ?: return@Runnable
+        longFired = true
+        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+        iconRectOnScreen(it.app)?.let { r -> onLongPress(it.app, r) }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    override fun onTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                anim?.cancel()
+                downX = e.x; downY = e.y; lastX = e.x; dragging = false; longFired = false
+                vt?.recycle(); vt = android.view.VelocityTracker.obtain(); vt?.addMovement(e)
+                parent?.requestDisallowInterceptTouchEvent(true)
+                postDelayed(longPress, android.view.ViewConfiguration.getLongPressTimeout().toLong())
+            }
+            MotionEvent.ACTION_MOVE -> {
+                vt?.addMovement(e)
+                if (!dragging && kotlin.math.abs(e.x - downX) > slop) { dragging = true; removeCallbacks(longPress); onDragStart() }
+                if (dragging) {
+                    var delta = (lastX - e.x) / colPx
+                    if (pos + delta < 0 || pos + delta > columns - 1) delta *= 0.35f      // rubber band at the ends
+                    pos += delta
+                    lastX = e.x
+                    notifyFocus(); invalidate()
+                }
+            }
+            MotionEvent.ACTION_UP -> {
+                removeCallbacks(longPress)
+                if (dragging) {
+                    vt?.computeCurrentVelocity(1000)
+                    val v = vt?.xVelocity ?: 0f
+                    val target = Math.round(pos - v / colPx * 0.28f).toFloat()
+                    animateTo(target, (380 + kotlin.math.abs(target - pos) * 45).toLong().coerceAtMost(1100))
+                } else if (!longFired) {
+                    hit(e.x, e.y)?.let { it ->
+                        if (it.col == Math.round(pos)) iconRectOnScreen(it.app)?.let { r -> onLaunch(it.app, r) }
+                        else animateTo(it.col.toFloat(), 420)
+                    }
+                }
+                vt?.recycle(); vt = null
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(longPress)
+                if (dragging) animateTo(Math.round(pos).toFloat(), 360)
+                vt?.recycle(); vt = null
+            }
         }
+        return true
     }
 }
 
