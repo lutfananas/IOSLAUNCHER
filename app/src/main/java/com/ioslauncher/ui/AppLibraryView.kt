@@ -93,7 +93,12 @@ class AppLibraryView(context: Context, private val host: LibraryHost) : FrameLay
             }
         })
         recycler.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) = Glass.invalidateTree(rv)
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                Glass.invalidateTree(rv)
+                // The search field scrolls away with the cards, like iOS.
+                searchPill.translationY = -rv.computeVerticalScrollOffset().toFloat()
+                searchPill.invalidate()
+            }
         })
         addView(recycler, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         val lp = LayoutParams(LayoutParams.MATCH_PARENT, d.searchBarHeight).apply {
@@ -115,7 +120,7 @@ class AppLibraryView(context: Context, private val host: LibraryHost) : FrameLay
     /** Glass cards sample the wallpaper by screen position — redraw them when they move. */
     fun invalidateGlass() { Glass.invalidateTree(this) }
 
-    fun scrollToTop() = recycler.scrollToPosition(0)
+    fun scrollToTop() { recycler.scrollToPosition(0); searchPill.translationY = 0f }
 
     private inner class Adapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         var items: List<LibraryCategory> = emptyList()
@@ -215,7 +220,15 @@ class CategoryCardView(context: Context, private val host: AppLibraryView.Librar
             val cat = category ?: return
             val slot = slotAt(e.x, e.y)
             pressedSlot = -1; invalidate()
-            if (slot == -1 || (slot == 3 && cluster())) return
+            if (slot == -1) return
+            if (slot == 3 && cluster()) {
+                // Which of the four small icons is under the finger?
+                val (i, rect) = smallAt(e.x, e.y) ?: return
+                val app = cat.apps.getOrNull(3 + i) ?: return
+                performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                host.onLibraryLongPress(app, screenRect(rect))
+                return
+            }
             val app = cat.apps.getOrNull(slot) ?: return
             performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             host.onLibraryLongPress(app, screenRect(slotRect(slot)))
@@ -257,6 +270,18 @@ class CategoryCardView(context: Context, private val host: AppLibraryView.Librar
         val col = slot % 2; val row = slot / 2
         val l = p + col * (b + p); val t = p + row * (b + p)
         return RectF(l, t, l + b, t + b)
+    }
+
+    /** Small icon (index 0..3 inside the cluster) at (x, y), with its rect. */
+    private fun smallAt(x: Float, y: Float): Pair<Int, RectF>? {
+        val r = slotRect(3); val small = smallSize(); val g = smallGap()
+        val off = (r.width() - (2 * small + g)) / 2f
+        for (i in 0..3) {
+            val l = r.left + off + (i % 2) * (small + g); val t = r.top + off + (i / 2) * (small + g)
+            val rect = RectF(l, t, l + small, t + small)
+            if (RectF(rect).apply { inset(-g / 2, -g / 2) }.contains(x, y)) return i to rect
+        }
+        return null
     }
 
     private fun slotAt(x: Float, y: Float): Int {

@@ -1,5 +1,12 @@
 # Changelog
 
+## v1.0.1
+
+- App Library: kotak search ikut bergulir ke atas bersama kartu saat di-scroll.
+- App Library & pencarian: menu tekan-lama selalu menampilkan **Add to Home Screen**. Bila aplikasi sudah ada di
+  Home Screen, launcher memberi tahu letaknya (halaman, dock, atau folder) alih-alih membuat duplikat.
+- Ikon kecil di klaster 2×2 kartu App Library kini bisa ditekan-lama untuk membuka menunya.
+
 ## v1.0.0 — Rilis pertama
 
 Launcher bergaya iOS untuk Android 17 (berjalan di Android 12 ke atas).

@@ -609,11 +609,29 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
         showMenu(bmp, iconBounds, libraryMenu(app))
     }
 
+    /**
+     * Put an app on the Home Screen from the App Library / search. If it's already there (on a page,
+     * in the dock or in a folder) the launcher says where instead of making a duplicate.
+     */
+    private fun addToHomeFromLibrary(app: AppInfo) {
+        val folder = layoutStore.folderOf(app.key)
+        val where = when {
+            app.key in layoutStore.dock -> "in the Dock"
+            folder != null -> "in the folder “${folder.name}”"
+            layoutStore.pageOf(app.key) >= 0 -> "on page ${layoutStore.pageOf(app.key) + 1}"
+            else -> null
+        }
+        if (where != null) {
+            Toast.makeText(this, "${app.label} is already on the Home Screen ($where)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        layoutStore.appendToHome(app.key); layoutStore.normalize(); layoutStore.save(); applyLayout(false)
+        val page = layoutStore.pageOf(app.key) + 1
+        Toast.makeText(this, "Added to Home Screen · page $page", Toast.LENGTH_SHORT).show()
+    }
+
     private fun libraryMenu(app: AppInfo): List<MenuItem> = buildList {
-        if (!layoutStore.isOnHome(app.key)) add(MenuItem("Add to Home Screen") {
-            layoutStore.appendToHome(app.key); layoutStore.normalize(); layoutStore.save(); applyLayout(false)
-            Toast.makeText(this@MainActivity, "Added to Home Screen", Toast.LENGTH_SHORT).show()
-        })
+        add(MenuItem("Add to Home Screen") { addToHomeFromLibrary(app) })
         add(MenuItem("Edit Icon") { editIcon(app) })
         add(MenuItem("App Info") { appInfo(app) })
         add(MenuItem("Delete App", destructive = true) { uninstall(app) })
