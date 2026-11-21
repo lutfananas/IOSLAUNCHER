@@ -611,18 +611,14 @@ class MainActivity : ComponentActivity(), Overlay.OverlayHost, PagedView.Callbac
 
     /**
      * Put an app on the Home Screen from the App Library / search. If it's already there (on a page,
-     * in the dock or in a folder) the launcher says where instead of making a duplicate.
+     * in the dock or in a folder) it is moved to page 2.
      */
     private fun addToHomeFromLibrary(app: AppInfo) {
-        val folder = layoutStore.folderOf(app.key)
-        val where = when {
-            app.key in layoutStore.dock -> "in the Dock"
-            folder != null -> "in the folder “${folder.name}”"
-            layoutStore.pageOf(app.key) >= 0 -> "on page ${layoutStore.pageOf(app.key) + 1}"
-            else -> null
-        }
-        if (where != null) {
-            Toast.makeText(this, "${app.label} is already on the Home Screen ($where)", Toast.LENGTH_SHORT).show()
+        if (layoutStore.isOnHome(app.key)) {
+            layoutStore.moveAppToPage(app.key, 1)
+            applyLayout(false)
+            val page = layoutStore.pageOf(app.key) + 1
+            Toast.makeText(this, "${app.label} moved to page $page", Toast.LENGTH_SHORT).show()
             return
         }
         layoutStore.appendToHome(app.key); layoutStore.normalize(); layoutStore.save(); applyLayout(false)

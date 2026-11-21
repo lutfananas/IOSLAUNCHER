@@ -1,5 +1,10 @@
 # Changelog
 
+## v1.0.2
+
+- App Library & pencarian: **Add to Home Screen** pada aplikasi yang sudah ada di Home Screen kini memindahkan ikonnya
+  ke **page 2** (dari halaman lain, dock, atau folder).
+
 ## v1.0.1
 
 - App Library: kotak search ikut bergulir ke atas bersama kartu saat di-scroll.

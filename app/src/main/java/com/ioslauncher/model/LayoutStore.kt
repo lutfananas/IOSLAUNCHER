@@ -210,6 +210,22 @@ class LayoutStore(private val context: Context, private val prefs: Prefs) {
         dock.remove(key)
     }
 
+    /**
+     * Move an app that's already on the Home Screen (page, dock or folder) to page [page]: end of that
+     * page in flow mode, first empty cell with free placement. Folders it leaves empty disappear.
+     */
+    fun moveAppToPage(key: String, page: Int) {
+        detach(key)
+        positions.remove(key)
+        folderOf(key)?.let { f ->
+            f.apps.remove(key)
+            if (f.apps.isEmpty()) { detach(f.id); positions.remove(f.id); folders.remove(f.id) }
+        }
+        while (pages.size <= page) pages += mutableListOf<String>()
+        pages[page] += key
+        normalize(); save()
+    }
+
     /** Free placement: put [key] at (col,row) on [page]. */
     fun place(key: String, page: Int, col: Int, row: Int) {
         detach(key)
